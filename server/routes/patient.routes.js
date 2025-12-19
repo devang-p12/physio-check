@@ -5,9 +5,6 @@ import { patientOnly } from "../middleware/role.middleware.js";
 
 const router = express.Router();
 
-router.get("/todays-exercises",auth ,patientOnly,getTodaysExercises);
-
-
-
+router.get("/todays-exercises", auth, patientOnly, getTodaysExercises);
 
 export default router;

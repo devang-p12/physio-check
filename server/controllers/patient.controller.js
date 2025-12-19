@@ -11,10 +11,7 @@ export const getTodaysExercises = (req, res) => {
   console.log("Assignments in DB:", assignments);
 
   const todaysExercises = assignments.filter(
-    a =>
-      a.patientId == patientId &&
-      a.date == today &&
-      !a.completed
+    (a) => a.patientId == patientId && a.date == today && !a.completed,
   );
 
   console.log("Filtered todaysExercises:", todaysExercises);
