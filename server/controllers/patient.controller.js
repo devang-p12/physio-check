@@ -1,20 +1,52 @@
-import { assignments, exercises } from "../data/db.js";
+import { plans, assignments } from "../data/db.js";
 
 export const getTodaysExercises = (req, res) => {
-  console.log("🔥 getTodaysExercises HIT");
-
   const patientId = Number(req.user.id);
   const today = new Date().toISOString().split("T")[0];
 
-  console.log("Patient ID from token:", patientId);
-  console.log("Today:", today);
-  console.log("Assignments in DB:", assignments);
-
-  const todaysExercises = assignments.filter(
-    (a) => a.patientId == patientId && a.date == today && !a.completed,
+  const activePlans = plans.filter(
+    (plan) =>
+      Number(plan.patientId) === patientId &&
+      plan.active === true &&
+      plan.startDate <= today &&
+      plan.endDate >= today
   );
 
-  console.log("Filtered todaysExercises:", todaysExercises);
+  for (const plan of activePlans) {
+    const alreadyExists = assignments.find(
+      (a) =>
+        a.planId === plan.id &&
+        a.date === today
+    );
 
-  res.json({ exercises: todaysExercises });
+    if (!alreadyExists) {
+      assignments.push({
+        id: Date.now(),
+        planId: plan.id,
+        doctorId: plan.doctorId,
+        patientId: plan.patientId,
+        exerciseId: plan.exerciseId,
+        date: today,
+        prescription: plan.prescription,
+        completed: false,
+        performance: null,
+        createdAt: new Date().toISOString()
+      });
+    }
+  }
+
+  const todaysExercises = assignments.filter(
+    (a) =>
+      Number(a.patientId) === patientId &&
+      a.date === today &&
+      a.completed === false
+  );
+
+  console.log("TODAY:", today);
+  console.log("ACTIVE PLANS:", activePlans);
+  console.log("ASSIGNMENTS:", assignments);
+
+  return res.json({
+    exercises: todaysExercises
+  });
 };
