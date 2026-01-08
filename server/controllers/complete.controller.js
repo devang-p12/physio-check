@@ -15,11 +15,19 @@ export const completeExercise = (req, res) => {
   if (!assignment) {
     return res.status(404).json({ message: "assignment not found" });
   }
-  if (assignment.patientId !== patientId) {
+  if (Number(assignment.patientId) !== patientId) {
     return res
       .status(403)
       .json({ message: "not authorized to complete this assignment" });
   }
+  const today = new Date().toISOString().split("T")[0];
+
+  if (assignment.date !== today) {
+    return res.status(400).json({
+      message: "You can only complete today's exercise"
+    });
+  }
+
   if (assignment.completed === true) {
     return res.status(409).json({ message: "exercise already completed" });
   }

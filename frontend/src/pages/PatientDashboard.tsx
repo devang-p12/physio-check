@@ -1,239 +1,201 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Activity,
-  Menu,
   Bell,
   Play,
   CheckCircle2,
   Flame,
-  Clock,
   Trophy,
-  ChevronRight,
+  Clock,
+  LogOut,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { apiFetch } from "../api";
 
 const PatientDashboard = () => {
-  // Mock Data
   const navigate = useNavigate();
-  const handleStart = () => {
-    //logic goes here
-    navigate("/patient/session");
-  };
-  const [exercises, setExercises] = useState([
-    {
-      id: 1,
-      name: "Squats",
-      reps: "3 sets x 10 reps",
-      duration: "10 min",
-      status: "completed",
-      type: "Strength",
-    },
-    {
-      id: 2,
-      name: "Lunges",
-      reps: "3 sets x 8 reps",
-      duration: "8 min",
-      status: "pending",
-      type: "Balance",
-    },
-    {
-      id: 3,
-      name: "Plank Hold",
-      reps: "3 sets x 30 sec",
-      duration: "5 min",
-      status: "pending",
-      type: "Core",
-    },
-    {
-      id: 4,
-      name: "Hamstring Stretch",
-      reps: "2 sets x 30 sec",
-      duration: "5 min",
-      status: "pending",
-      type: "Flexibility",
-    },
-  ]);
 
-  const completedCount = exercises.filter(
-    (e) => e.status === "completed",
-  ).length;
+  const [exercises, setExercises] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [patientName, setPatientName] = useState("Patient");
+
+  // 🔐 Load name + fetch exercises
+  useEffect(() => {
+    const name = localStorage.getItem("name");
+    if (name) setPatientName(name);
+    fetchTodayExercises();
+  }, []);
+
+  // 🚪 Logout
+  const handleLogout = () => {
+    localStorage.clear();
+    navigate("/login");
+  };
+
+  // 📡 Fetch today’s exercises
+  const fetchTodayExercises = async () => {
+    setLoading(true);
+    try {
+      const data = await apiFetch("/patient/todays-exercises");
+      setExercises(data.exercises || []);
+    } catch (err) {
+      console.error("Failed to fetch exercises");
+    }
+    setLoading(false);
+  };
+
+  const completedCount = exercises.filter((e) => e.completed).length;
   const totalCount = exercises.length;
-  const progressPercentage = (completedCount / totalCount) * 100;
+  const progressPercentage =
+    totalCount === 0 ? 0 : (completedCount / totalCount) * 100;
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-20">
-      {/* --- MOBILE/TABLET NAVIGATION --- */}
+      {/* ===== NAVBAR ===== */}
       <nav className="bg-white px-6 py-4 flex justify-between items-center sticky top-0 z-30 border-b border-slate-100 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-teal-50 rounded-lg flex items-center justify-center text-teal-600">
             <Activity size={20} strokeWidth={2.5} />
           </div>
-          <span className="font-bold text-slate-900 tracking-tight">
-            PhysioCheck
-          </span>
+          <span className="font-bold text-slate-900">PhysioCheck</span>
         </div>
+
         <div className="flex items-center gap-4">
-          <button className="relative text-slate-400 hover:text-slate-600">
-            <Bell size={20} />
-            <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+          <Bell size={20} className="text-slate-400" />
+
+          <img
+            src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${patientName}`}
+            alt="User"
+            className="w-8 h-8 rounded-full border"
+          />
+
+          {/* LOGOUT */}
+          <button
+            onClick={handleLogout}
+            className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
+            title="Logout"
+          >
+            <LogOut size={18} />
           </button>
-          <div className="w-8 h-8 rounded-full bg-slate-200 overflow-hidden border border-slate-100">
-            <img
-              src="https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah"
-              alt="User"
-            />
-          </div>
         </div>
       </nav>
 
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* --- GREETING & MOTIVATION --- */}
+      {/* ===== MAIN ===== */}
+      <main className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+        {/* GREETING */}
         <div>
           <h1 className="text-2xl font-bold text-slate-900">
-            Good morning, Sarah! ☀️
+            Good morning, {patientName}! ☀️
           </h1>
-          <p className="text-slate-500 text-sm mt-1">
-            Ready to crush your recovery goals today?
+          <p className="text-slate-500 text-sm">
+            Ready to continue your recovery?
           </p>
         </div>
 
-        {/* --- PROGRESS HERO SECTION --- */}
+        {/* PROGRESS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Main Progress Card */}
-          <div className="md:col-span-2 bg-gradient-to-br from-teal-500 to-teal-600 rounded-2xl p-6 text-white shadow-lg shadow-teal-500/20 relative overflow-hidden">
-            {/* Background Decor */}
-            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-6 -mt-6"></div>
+          <div className="md:col-span-2 bg-gradient-to-br from-teal-500 to-teal-600 rounded-2xl p-6 text-white shadow-lg">
+            <p className="text-teal-100 text-sm">Daily Progress</p>
+            <h2 className="text-3xl font-bold">
+              {completedCount}/{totalCount} Exercises
+            </h2>
 
-            <div className="relative z-10 flex justify-between items-end">
-              <div>
-                <p className="text-teal-100 font-medium text-sm mb-1">
-                  Daily Progress
-                </p>
-                <h2 className="text-3xl font-bold">
-                  {completedCount}/{totalCount} Exercises
-                </h2>
-                <p className="text-xs text-teal-100 mt-2 opacity-80">
-                  Keep going, you're doing great!
-                </p>
-              </div>
-
-              {/* Circular Progress Indicator */}
-              <div className="relative w-16 h-16 flex items-center justify-center">
-                <svg className="w-full h-full transform -rotate-90">
-                  <circle
-                    cx="32"
-                    cy="32"
-                    r="28"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    fill="transparent"
-                    className="text-teal-700/30"
-                  />
-                  <circle
-                    cx="32"
-                    cy="32"
-                    r="28"
-                    stroke="white"
-                    strokeWidth="4"
-                    fill="transparent"
-                    strokeDasharray={175}
-                    strokeDashoffset={175 - (175 * progressPercentage) / 100}
-                    className="transition-all duration-1000 ease-out"
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <span className="absolute text-xs font-bold">
-                  {Math.round(progressPercentage)}%
-                </span>
-              </div>
+            <div className="relative w-16 h-16 mt-4">
+              <svg className="w-full h-full transform -rotate-90">
+                <circle
+                  cx="32"
+                  cy="32"
+                  r="28"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                  fill="transparent"
+                  className="text-teal-700/30"
+                />
+                <circle
+                  cx="32"
+                  cy="32"
+                  r="28"
+                  stroke="white"
+                  strokeWidth="4"
+                  fill="transparent"
+                  strokeDasharray={175}
+                  strokeDashoffset={
+                    175 - (175 * progressPercentage) / 100
+                  }
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">
+                {Math.round(progressPercentage)}%
+              </span>
             </div>
           </div>
 
-          {/* Streak Card */}
-          <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex flex-col justify-center items-center text-center">
-            <div className="w-12 h-12 bg-orange-50 rounded-full flex items-center justify-center text-orange-500 mb-2">
-              <Flame
-                size={24}
-                fill="currentColor"
-                className="text-orange-500"
-              />
-            </div>
-            <h3 className="text-2xl font-bold text-slate-900">12 Days</h3>
-            <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">
-              Current Streak
-            </p>
+          <div className="bg-white rounded-2xl p-6 border shadow-sm text-center">
+            <Flame className="mx-auto text-orange-500" />
+            <h3 className="text-2xl font-bold mt-2">12 Days</h3>
+            <p className="text-xs text-slate-500">Current Streak</p>
           </div>
         </div>
 
-        {/* --- TODAY'S EXERCISES --- */}
+        {/* TODAY’S EXERCISES */}
         <div>
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-bold text-slate-900">Today's Plan</h2>
-            <span className="text-sm text-teal-600 font-medium bg-teal-50 px-3 py-1 rounded-full">
-              {totalCount - completedCount} Remaining
-            </span>
-          </div>
+          <h2 className="text-lg font-bold mb-3">Today's Plan</h2>
+
+          {loading && (
+            <p className="text-slate-500 text-sm">Loading exercises...</p>
+          )}
+
+          {!loading && exercises.length === 0 && (
+            <p className="text-slate-500 text-sm">
+              🎉 No exercises assigned for today
+            </p>
+          )}
 
           <div className="space-y-4">
-            {exercises.map((ex) => (
-              <div
-                key={ex.id}
-                className={`group relative bg-white rounded-2xl p-4 border transition-all duration-300 flex items-center gap-4 ${
-                  ex.status === "completed"
-                    ? "border-slate-100 opacity-75"
-                    : "border-slate-100 shadow-sm hover:shadow-md hover:border-teal-200"
-                }`}
-              >
-                {/* Icon/Thumbnail */}
-                <div
-                  className={`w-14 h-14 rounded-xl flex-shrink-0 flex items-center justify-center ${
-                    ex.status === "completed"
-                      ? "bg-green-50 text-green-600"
-                      : "bg-slate-100 text-slate-400 group-hover:bg-teal-50 group-hover:text-teal-600"
-                  } transition-colors`}
-                >
-                  {ex.status === "completed" ? (
-                    <CheckCircle2 size={24} />
-                  ) : (
-                    <Activity size={24} />
-                  )}
-                </div>
+            {exercises.map((ex) => {
+              const repsText = `${ex.prescription.sets} sets × ${ex.prescription.repsPerSet} reps`;
 
-                {/* Text Content */}
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3
-                      className={`font-bold text-lg ${ex.status === "completed" ? "text-slate-500 line-through" : "text-slate-900"}`}
-                    >
-                      {ex.name}
-                    </h3>
-                    {ex.status === "completed" && (
-                      <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                        DONE
-                      </span>
+              return (
+                <div
+                  key={ex.id}
+                  className="bg-white rounded-2xl p-4 border shadow-sm flex items-center gap-4"
+                >
+                  <div className="w-14 h-14 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center">
+                    {ex.completed ? (
+                      <CheckCircle2 size={24} />
+                    ) : (
+                      <Activity size={24} />
                     )}
                   </div>
-                  <div className="flex items-center gap-4 text-xs text-slate-500">
-                    <span className="flex items-center gap-1">
-                      <Trophy size={12} /> {ex.reps}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock size={12} /> {ex.duration}
-                    </span>
-                  </div>
-                </div>
 
-                {/* Action Button */}
-                {ex.status !== "completed" && (
-                  <button
-                    className="w-10 h-10 rounded-full bg-teal-500 hover:bg-teal-600 text-white flex items-center justify-center shadow-md shadow-teal-500/30 transition-transform active:scale-95"
-                    onClick={handleStart}
-                  >
-                    <Play size={18} fill="currentColor" className="ml-1" />
-                  </button>
-                )}
-              </div>
-            ))}
+                  <div className="flex-1">
+                    <h3 className="font-bold text-lg">
+                      Exercise #{ex.exerciseId}
+                    </h3>
+                    <div className="flex items-center gap-4 text-xs text-slate-500">
+                      <span className="flex items-center gap-1">
+                        <Trophy size={12} /> {repsText}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Clock size={12} /> ~10 min
+                      </span>
+                    </div>
+                  </div>
+
+                  {!ex.completed && (
+                    <button
+                      className="w-10 h-10 rounded-full bg-teal-500 text-white flex items-center justify-center"
+                      onClick={() =>
+                        navigate(`/patient/session?id=${ex.id}`)
+                      }
+                    >
+                      <Play size={18} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </main>
