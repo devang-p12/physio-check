@@ -1,52 +1,45 @@
-import { plans, assignments } from "../data/db.js";
+import { getAssignmentsByPatient } from "../models/Assignment.model.js";
 
-export const getTodaysExercises = (req, res) => {
-  const patientId = Number(req.user.id);
+export const getTodaysExercises = async (req, res) => {
+  const patientId = req.user.id;
   const today = new Date().toISOString().split("T")[0];
 
-  const activePlans = plans.filter(
-    (plan) =>
-      Number(plan.patientId) === patientId &&
-      plan.active === true &&
-      plan.startDate <= today &&
-      plan.endDate >= today
-  );
+  try {
+    const allAssignments = await getAssignmentsByPatient(patientId);
 
-  for (const plan of activePlans) {
-    const alreadyExists = assignments.find(
-      (a) =>
-        a.planId === plan.id &&
-        a.date === today
+    const todaysExercises = allAssignments.filter(
+      (a) => {
+        const assignmentDate = new Date(a.date).toISOString().split("T")[0];
+        return assignmentDate === today && !a.completed;
+      }
     );
 
-    if (!alreadyExists) {
-      assignments.push({
-        id: Date.now(),
-        planId: plan.id,
-        doctorId: plan.doctorId,
-        patientId: plan.patientId,
-        exerciseId: plan.exerciseId,
-        date: today,
-        prescription: plan.prescription,
-        completed: false,
-        performance: null,
-        createdAt: new Date().toISOString()
-      });
-    }
+    return res.json({
+      exercises: todaysExercises.map(exercise => ({
+        id: exercise._id.toString(),
+        doctorId: exercise.doctorId ? exercise.doctorId._id.toString() : exercise.doctorId.toString(),
+        patientId: exercise.patientId ? exercise.patientId._id.toString() : exercise.patientId.toString(),
+        exerciseId: exercise.exerciseId ? exercise.exerciseId._id.toString() : exercise.exerciseId.toString(),
+        date: exercise.date,
+        prescription: JSON.parse(exercise.prescription),
+        completed: exercise.completed,
+        performance: exercise.performance,
+        doctor: exercise.doctorId && exercise.doctorId._id ? {
+          id: exercise.doctorId._id.toString(),
+          name: exercise.doctorId.name,
+          email: exercise.doctorId.email
+        } : null,
+        exercise: exercise.exerciseId && exercise.exerciseId._id ? {
+          id: exercise.exerciseId._id.toString(),
+          name: exercise.exerciseId.name,
+          reps: exercise.exerciseId.reps,
+          duration: exercise.exerciseId.duration,
+          description: exercise.exerciseId.description
+        } : null
+      }))
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
   }
-
-  const todaysExercises = assignments.filter(
-    (a) =>
-      Number(a.patientId) === patientId &&
-      a.date === today &&
-      a.completed === false
-  );
-
-  console.log("TODAY:", today);
-  console.log("ACTIVE PLANS:", activePlans);
-  console.log("ASSIGNMENTS:", assignments);
-
-  return res.json({
-    exercises: todaysExercises
-  });
 };

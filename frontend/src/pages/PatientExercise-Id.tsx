@@ -9,8 +9,10 @@ import {
   AlertCircle,
   Video,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const ExerciseSession = () => {
+  const navigate = useNavigate();
   const [isActive, setIsActive] = useState(false);
   const [reps, setReps] = useState(0);
   const [postureStatus, setPostureStatus] = useState("correct"); // 'correct' or 'incorrect'
@@ -140,7 +142,10 @@ const ExerciseSession = () => {
             </span>
             <h1 className="text-2xl font-bold text-slate-900">Squats</h1>
           </div>
-          <button className="p-2 -mr-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
+          <button 
+            onClick={() => navigate("/patient")}
+            className="p-2 -mr-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+          >
             <X size={24} />
           </button>
         </div>

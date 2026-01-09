@@ -1,65 +1,64 @@
-import { plans,users } from "../data/db.js";
+import { findUserById } from "../models/User.model.js";
+import { findExerciseById } from "../models/Exercise.model.js";
+import { createAssignment } from "../models/Assignment.model.js";
 
-export const createPlan = (req,res) => {
-  const { patientId , exerciseId, prescription, startDate , endDate} = req.body;
+export const assignExercise = async (req, res) => {
+  const { patientId, exerciseId, date, prescription } = req.body;
 
-  if(!patientId || !exerciseId || !prescription || !startDate || !endDate){
-    return res.status(400).json({
-      message: "invalid input"
-    })
+  if (!patientId || !exerciseId || !date || !prescription) {
+    return res.status(400).json({ message: "missing required fields" });
   }
 
-  if (startDate > endDate) {
-    return res.status(400).json({
-      message: "start date greater than end date"
-    })
-  }
+  try {
+    const { sets, repsPerSet } = prescription;
 
-  const { sets, repsPerSet } = prescription;
+    if (
+      !Number.isInteger(sets) ||
+      !Number.isInteger(repsPerSet) ||
+      sets <= 0 ||
+      repsPerSet <= 0
+    ) {
+      return res.status(400).json({
+        message: "invalid prescription! sets and reps must be a positive integer",
+      });
+    }
 
-  if (
-    !Number.isInteger(sets) || 
-    !Number.isInteger(repsPerSet) || 
-    sets <= 0 || 
-    repsPerSet <= 0
-  ) {
-    return res.status(400).json({
-      message: "invalid prescription values"
+    const patient = await findUserById(patientId);
+    if (!patient || patient.role !== "patient") {
+      return res.status(404).json({ message: "patient not found" });
+    }
+
+    const exercise = await findExerciseById(exerciseId);
+    if (!exercise) {
+      return res.status(404).json({ message: "exercise not found" });
+    }
+
+    const assignment = await createAssignment({
+      doctorId: req.user.id,
+      patientId,
+      exerciseId,
+      date: new Date(date),
+      prescription: JSON.stringify(prescription),
     });
-  }
 
-  const patient = users.find(
-    (u) => u.id === patientId && u.role === "patient"
-  );
-
-  if (!patient) {
-    return res.status(404).json({
-      message: "Patient not found"
+    res.status(201).json({
+      message: "Exercise assigned Successfully",
+      assignment: {
+        id: assignment._id.toString(),
+        doctorId: assignment.doctorId.toString(),
+        patientId: assignment.patientId.toString(),
+        exerciseId: assignment.exerciseId.toString(),
+        date: assignment.date,
+        prescription: assignment.prescription,
+        completed: assignment.completed,
+        performance: assignment.performance
+      },
     });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
   }
-
-  const plan = {
-    id: Date.now(),
-    doctorId: req.user.id,
-    patientId,
-    exerciseId,
-    prescription,
-    startDate,
-    endDate,
-    frequency: "daily",
-    active: true,
-    createdAt: new Date().toISOString()
-  };
-
-  plans.push(plan);
-
-  return res.status(201).json({
-    message: "Exercise plan created successfully",
-    plan  
-  })
-
-
-}
+};
 
 
 

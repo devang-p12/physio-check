@@ -3,6 +3,7 @@ import cors from "cors";
 import authRoutes from "./routes/auth.routes.js";
 import doctorRoutes from "./routes/doctor.routes.js";
 import patientRoutes from "./routes/patient.routes.js";
+import { connectDB } from "./data/db.js";
 
 console.log("🔥 PhysioCheck backend started");
 
@@ -10,6 +11,9 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+// Connect to database
+await connectDB();
 
 app.get("/health", (req, res) => {
   res.json({ status: "OK", message: "Auth service running" });

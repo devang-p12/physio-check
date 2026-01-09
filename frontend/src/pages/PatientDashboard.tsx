@@ -154,7 +154,10 @@ const PatientDashboard = () => {
 
           <div className="space-y-4">
             {exercises.map((ex) => {
-              const repsText = `${ex.prescription.sets} sets × ${ex.prescription.repsPerSet} reps`;
+              const prescription = typeof ex.prescription === 'string' 
+                ? JSON.parse(ex.prescription) 
+                : ex.prescription;
+              const repsText = `${prescription.sets} sets × ${prescription.repsPerSet} reps`;
 
               return (
                 <div
@@ -171,14 +174,14 @@ const PatientDashboard = () => {
 
                   <div className="flex-1">
                     <h3 className="font-bold text-lg">
-                      Exercise #{ex.exerciseId}
+                      {ex.exercise ? ex.exercise.name : `Exercise #${ex.exerciseId}`}
                     </h3>
                     <div className="flex items-center gap-4 text-xs text-slate-500">
                       <span className="flex items-center gap-1">
                         <Trophy size={12} /> {repsText}
                       </span>
                       <span className="flex items-center gap-1">
-                        <Clock size={12} /> ~10 min
+                        <Clock size={12} /> {ex.exercise?.duration ? `~${ex.exercise.duration} sec` : '~10 min'}
                       </span>
                     </div>
                   </div>
