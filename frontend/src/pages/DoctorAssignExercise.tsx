@@ -16,12 +16,13 @@ import { apiFetch } from "../api";
 const AssignExercise = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const patientId = Number(params.get("patientId"));
+  const patientId = params.get("patientId");
 
   const [patient, setPatient] = useState(null);
   const [selectedExercises, setSelectedExercises] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [exerciseLibrary, setExerciseLibrary] = useState([]);
 
   // 🔹 Date handling
   const today = new Date().toISOString().split("T")[0];
@@ -30,59 +31,64 @@ const AssignExercise = () => {
     new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0]
   );
 
-  // 🔹 Exercise Library
-  const exerciseLibrary = [
-    { id: 1, name: "Leg Press", type: "Strength", focus: "Quads" },
-    { id: 2, name: "Heel Slides", type: "Mobility", focus: "Knee Flexion" },
-    { id: 3, name: "Wall Squats", type: "Endurance", focus: "Quads/Glutes" },
-    { id: 4, name: "Calf Raises", type: "Strength", focus: "Calves" },
-    { id: 5, name: "Single Leg Balance", type: "Stability", focus: "Balance" },
-  ];
-
   const filteredLibrary = exerciseLibrary.filter((ex) =>
     ex.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // 🔹 Fetch patient info (Logic preserved)
+  // 🔹 Fetch patient info and exercises
   useEffect(() => {
     if (!patientId) {
       navigate("/doctor");
       return;
     }
-    const fetchPatient = async () => {
+    const fetchData = async () => {
       try {
-        const data = await apiFetch("/doctor/patients");
-        const p = data.patients.find((x) => x.id === patientId);
+        // Fetch patient
+        const patientData = await apiFetch("/doctor/patients");
+        const p = patientData.patients.find((x) => x.id === patientId);
         if (!p) {
           alert("Patient not found");
           navigate("/doctor");
           return;
         }
         setPatient(p);
-      } catch {
+
+        // Fetch exercises
+        const exerciseData = await apiFetch("/doctor/exercises");
+        if (exerciseData.exercises && exerciseData.exercises.length > 0) {
+          setExerciseLibrary(exerciseData.exercises);
+        } else {
+          // Seed exercises if none exist
+          const seededData = await apiFetch("/doctor/seed-exercises", {
+            method: "POST",
+          });
+          setExerciseLibrary(seededData.exercises);
+        }
+      } catch (err) {
+        console.error(err);
         navigate("/doctor");
       }
     };
-    fetchPatient();
+    fetchData();
   }, [patientId, navigate]);
 
   const addExercise = (exercise) => {
-    if (!selectedExercises.find((e) => e.id === exercise.id)) {
+    if (!selectedExercises.find((e) => e._id === exercise._id)) {
       setSelectedExercises([
         ...selectedExercises,
-        { ...exercise, sets: 3, reps: 10 },
+        { ...exercise, sets: 3, reps: exercise.reps || 10 },
       ]);
     }
   };
 
   const removeExercise = (id) => {
-    setSelectedExercises(selectedExercises.filter((e) => e.id !== id));
+    setSelectedExercises(selectedExercises.filter((e) => e._id !== id));
   };
 
   const updateField = (id, field, value) => {
     setSelectedExercises(
       selectedExercises.map((e) =>
-        e.id === id ? { ...e, [field]: Number(value) } : e
+        e._id === id ? { ...e, [field]: Number(value) } : e
       )
     );
   };
@@ -99,14 +105,13 @@ const AssignExercise = () => {
     setLoading(true);
     try {
       for (const ex of selectedExercises) {
-        await apiFetch("/doctor/create-plan", {
+        await apiFetch("/doctor/assign-exercise", {
           method: "POST",
           body: JSON.stringify({
             patientId,
-            exerciseId: ex.id,
+            exerciseId: ex._id,
             prescription: { sets: ex.sets, repsPerSet: ex.reps },
-            startDate,
-            endDate,
+            date: startDate,
           }),
         });
       }
@@ -176,7 +181,7 @@ const AssignExercise = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredLibrary.map((ex) => (
                 <div
-                  key={ex.id}
+                  key={ex._id}
                   className="group bg-white p-5 rounded-2xl border border-slate-200 hover:border-teal-500 hover:shadow-md transition-all flex flex-col justify-between"
                 >
                   <div>
@@ -184,14 +189,10 @@ const AssignExercise = () => {
                       <div className="p-2.5 bg-teal-50 text-teal-600 rounded-xl group-hover:bg-teal-500 group-hover:text-white transition-colors">
                         <Dumbbell size={22} />
                       </div>
-                      <span className="text-[10px] uppercase tracking-wider font-bold bg-slate-100 text-slate-500 px-2 py-1 rounded-md">
-                        {ex.type}
-                      </span>
                     </div>
                     <h3 className="font-bold text-slate-900 group-hover:text-teal-700 transition-colors">{ex.name}</h3>
-                    <p className="text-sm text-slate-500 mt-1 flex items-center gap-1">
-                      <Target size={14} className="text-slate-400" />
-                      Focus: {ex.focus}
+                    <p className="text-sm text-slate-500 mt-1">
+                      {ex.description}
                     </p>
                   </div>
                   <button
@@ -260,9 +261,9 @@ const AssignExercise = () => {
                     </div>
                   ) : (
                     selectedExercises.map((ex) => (
-                      <div key={ex.id} className="group border border-slate-100 bg-slate-50/50 rounded-xl p-4 relative hover:border-teal-200 transition-colors">
+                      <div key={ex._id} className="group border border-slate-100 bg-slate-50/50 rounded-xl p-4 relative hover:border-teal-200 transition-colors">
                         <button
-                          onClick={() => removeExercise(ex.id)}
+                          onClick={() => removeExercise(ex._id)}
                           className="absolute top-3 right-3 p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
                         >
                           <X size={14} />
@@ -276,7 +277,7 @@ const AssignExercise = () => {
                             <input
                               type="number"
                               value={ex.sets}
-                              onChange={(e) => updateField(ex.id, "sets", e.target.value)}
+                              onChange={(e) => updateField(ex._id, "sets", e.target.value)}
                               className="w-full border-transparent bg-white px-3 py-1.5 rounded-lg text-sm focus:ring-2 focus:ring-teal-500/20 border outline-none font-medium"
                             />
                           </div>
@@ -285,7 +286,7 @@ const AssignExercise = () => {
                             <input
                               type="number"
                               value={ex.reps}
-                              onChange={(e) => updateField(ex.id, "reps", e.target.value)}
+                              onChange={(e) => updateField(ex._id, "reps", e.target.value)}
                               className="w-full border-transparent bg-white px-3 py-1.5 rounded-lg text-sm focus:ring-2 focus:ring-teal-500/20 border outline-none font-medium"
                             />
                           </div>
