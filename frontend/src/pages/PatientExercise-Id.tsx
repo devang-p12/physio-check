@@ -1,82 +1,83 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   X,
-  Maximize2,
   RefreshCcw,
   Play,
   Pause,
   CheckCircle2,
   AlertCircle,
-  Video,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
+import { usePose } from "@/hooks/usePose";
+
 const ExerciseSession = () => {
   const navigate = useNavigate();
+
   const [isActive, setIsActive] = useState(false);
   const [reps, setReps] = useState(0);
-  const [postureStatus, setPostureStatus] = useState("correct"); // 'correct' or 'incorrect'
+  const [postureStatus, setPostureStatus] =
+    useState<"correct" | "incorrect">("correct");
   const [timer, setTimer] = useState(0);
 
-  // Mock Timer Logic
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  /* ---------------- TIMER ---------------- */
   useEffect(() => {
-    let interval = null;
+    let interval: number | undefined;
+
     if (isActive) {
-      interval = setInterval(() => {
+      interval = window.setInterval(() => {
         setTimer((prev) => prev + 1);
       }, 1000);
     } else {
-      clearInterval(interval);
+      setTimer(0);
     }
-    return () => clearInterval(interval);
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [isActive]);
 
-  // Format seconds to MM:SS
-  const formatTime = (seconds) => {
+  const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
   };
 
+  /* ---------------- POSE HOOK ---------------- */
+  usePose({
+    videoRef,
+    canvasRef,
+    isActive,
+    onRepUpdate: setReps,
+    onPostureUpdate: setPostureStatus,
+  });
+
   return (
     <div className="h-screen bg-slate-900 flex flex-col md:flex-row overflow-hidden font-sans">
       {/* --- LEFT AREA: LIVE CAMERA FEED --- */}
-      <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
-        {/* Placeholder Video Feed (Dark background) */}
-        <div className="absolute inset-0 bg-gradient-to-b from-slate-900/50 to-slate-900/10 z-10"></div>
+      <div className="flex-1 relative bg-black overflow-hidden">
+        {/* Gradient Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-900/50 to-slate-900/10 z-10" />
 
-        {/* Simulated AI Skeleton Overlay (Visual Flair) */}
-        <div className="absolute inset-0 z-0 opacity-20">
-          {/* Grid Pattern */}
-          <div
-            className="w-full h-full"
-            style={{
-              backgroundImage: "radial-gradient(#14B8A6 1px, transparent 1px)",
-              backgroundSize: "40px 40px",
-            }}
-          ></div>
-        </div>
+        {/* CAMERA */}
+        <video
+          ref={videoRef}
+          className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
+          playsInline
+          muted
+          autoPlay
+        />
 
-        {/* The "Patient" Silhouette (Placeholder) */}
-        <div className="relative z-0 opacity-50 animate-pulse">
-          <svg
-            width="300"
-            height="500"
-            viewBox="0 0 100 200"
-            fill="none"
-            stroke={postureStatus === "correct" ? "#14B8A6" : "#EF4444"}
-            strokeWidth="2"
-          >
-            <circle cx="50" cy="20" r="15" />
-            <line x1="50" y1="35" x2="50" y2="100" />
-            <line x1="50" y1="50" x2="20" y2="80" />
-            <line x1="50" y1="50" x2="80" y2="80" />
-            <line x1="50" y1="100" x2="30" y2="180" />
-            <line x1="50" y1="100" x2="70" y2="180" />
-          </svg>
-        </div>
+        {/* SKELETON CANVAS */}
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 z-10 pointer-events-none"
+        />
 
-        {/* Live Feedback Overlay (Floating) */}
+        {/* Live Feedback Overlay */}
         <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20">
           <div
             className={`flex items-center gap-3 px-6 py-3 rounded-full backdrop-blur-md border shadow-2xl transition-colors duration-300 ${
@@ -87,20 +88,14 @@ const ExerciseSession = () => {
           >
             {postureStatus === "correct" ? (
               <>
-                <CheckCircle2
-                  size={24}
-                  fill="currentColor"
-                  className="text-teal-500"
-                />
-                <span className="font-bold tracking-wide">Posture Correct</span>
+                <CheckCircle2 size={24} fill="currentColor" />
+                <span className="font-bold tracking-wide">
+                  Posture Correct
+                </span>
               </>
             ) : (
               <>
-                <AlertCircle
-                  size={24}
-                  fill="currentColor"
-                  className="text-red-500"
-                />
+                <AlertCircle size={24} fill="currentColor" />
                 <span className="font-bold tracking-wide">
                   Straighten Back!
                 </span>
@@ -108,31 +103,9 @@ const ExerciseSession = () => {
             )}
           </div>
         </div>
-
-        {/* Camera Controls Overlay */}
-        <div className="absolute bottom-6 left-6 z-20 flex gap-4">
-          <button className="p-3 bg-white/10 backdrop-blur-sm rounded-full text-white hover:bg-white/20 transition-all border border-white/10">
-            <Video size={20} />
-          </button>
-          <button className="p-3 bg-white/10 backdrop-blur-sm rounded-full text-white hover:bg-white/20 transition-all border border-white/10">
-            <Maximize2 size={20} />
-          </button>
-        </div>
-
-        {/* DEBUG TOGGLE (For you to test the UI states) */}
-        <button
-          onClick={() =>
-            setPostureStatus((prev) =>
-              prev === "correct" ? "incorrect" : "correct",
-            )
-          }
-          className="absolute bottom-6 right-6 z-30 px-3 py-1 bg-slate-800 text-xs text-slate-400 rounded border border-slate-700 hover:text-white"
-        >
-          Toggle AI Status
-        </button>
       </div>
 
-      {/* --- RIGHT SIDEBAR: INSTRUCTIONS & CONTROLS --- */}
+      {/* --- RIGHT SIDEBAR --- */}
       <div className="w-full md:w-[400px] bg-white flex flex-col h-1/2 md:h-full relative z-30 shadow-2xl">
         {/* Header */}
         <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50">
@@ -142,7 +115,7 @@ const ExerciseSession = () => {
             </span>
             <h1 className="text-2xl font-bold text-slate-900">Squats</h1>
           </div>
-          <button 
+          <button
             onClick={() => navigate("/patient")}
             className="p-2 -mr-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
           >
@@ -150,19 +123,20 @@ const ExerciseSession = () => {
           </button>
         </div>
 
-        {/* Scrollable Content */}
+        {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-8">
-          {/* Real-time Stats Grid */}
+          {/* Stats */}
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center">
               <span className="text-xs text-slate-500 font-bold uppercase">
                 Reps
               </span>
               <div className="text-4xl font-bold text-slate-900 mt-1">
-                {reps}{" "}
-                <span className="text-sm text-slate-400 font-medium">/ 15</span>
+                {reps}
+                <span className="text-sm text-slate-400 font-medium"> / 15</span>
               </div>
             </div>
+
             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center">
               <span className="text-xs text-slate-500 font-bold uppercase">
                 Duration
@@ -199,22 +173,21 @@ const ExerciseSession = () => {
             </ul>
           </div>
 
-          {/* Posture Tips */}
+          {/* Tip */}
           <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
             <h4 className="font-bold text-blue-900 text-sm mb-2">💡 Pro Tip</h4>
             <p className="text-xs text-blue-700">
-              Ensure your knees don't go past your toes to avoid injury. The AI
-              will alert you if you lean too far forward.
+              Ensure your knees don't go past your toes to avoid injury.
             </p>
           </div>
         </div>
 
-        {/* Footer Controls */}
-        <div className="p-6 border-t border-slate-100 bg-white shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+        {/* Footer */}
+        <div className="p-6 border-t border-slate-100 bg-white">
           {!isActive ? (
             <button
               onClick={() => setIsActive(true)}
-              className="w-full bg-teal-500 hover:bg-teal-600 text-white text-lg font-bold py-4 rounded-xl shadow-lg shadow-teal-500/30 flex items-center justify-center gap-2 transition-transform active:scale-95"
+              className="w-full bg-teal-500 hover:bg-teal-600 text-white text-lg font-bold py-4 rounded-xl shadow-lg shadow-teal-500/30 flex items-center justify-center gap-2"
             >
               <Play size={24} fill="currentColor" />
               Start Session
@@ -223,18 +196,18 @@ const ExerciseSession = () => {
             <div className="flex gap-3">
               <button
                 onClick={() => setIsActive(false)}
-                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-4 rounded-xl flex items-center justify-center gap-2"
               >
                 <Pause size={20} fill="currentColor" />
                 Pause
               </button>
               <button
-                onClick={() => setReps(0)} // Just a mock reset
-                className="px-6 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl flex items-center justify-center transition-colors"
+                onClick={() => setReps(0)}
+                className="px-6 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl flex items-center justify-center"
               >
                 <RefreshCcw size={20} />
               </button>
-              <button className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg">
+              <button className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 rounded-xl shadow-lg">
                 Finish
               </button>
             </div>

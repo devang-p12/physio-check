@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mediapipe/camera_utils": "^0.3.1675466862",
+    "@mediapipe/pose": "^0.5.1675469404",
     "@tailwindcss/vite": "^4.1.18",
     "lucide-react": "^0.561.0",
     "react": "^19.2.0",
