@@ -8,6 +8,7 @@ import {
   Trophy,
   Clock,
   LogOut,
+  Settings,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
@@ -61,6 +62,21 @@ const PatientDashboard = () => {
         </div>
 
         <div className="flex items-center gap-4">
+          <button
+            onClick={() => navigate('/patient/history')}
+            className="px-3 py-2 text-sm font-medium text-teal-600 hover:bg-teal-50 rounded-lg transition"
+          >
+            Session History
+          </button>
+
+          <button
+            onClick={() => navigate('/patient/settings')}
+            className="p-2 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition"
+            title="Settings"
+          >
+            <Settings size={20} />
+          </button>
+
           <Bell size={20} className="text-slate-400" />
 
           <img

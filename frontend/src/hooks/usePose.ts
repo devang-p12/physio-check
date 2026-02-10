@@ -42,11 +42,11 @@ export function usePose({
     pose.onResults((results: Results) => {
       if (!results.poseLandmarks) return
 
-      // 🔑 Sync canvas size
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
+      // 🔑 Sync canvas size to actual rendered size
+      const rect = canvas.getBoundingClientRect()
+      canvas.width = rect.width
+      canvas.height = rect.height
 
-      const SCALE = 1.15 
       ctx.clearRect(0, 0, canvas.width, canvas.height)
 
       const { reps, posture } = processPose(results.poseLandmarks)
@@ -54,17 +54,8 @@ export function usePose({
       onRepUpdate(reps)
       onPostureUpdate(posture)
 
-      ctx.save()
-      ctx.scale(-1, 1)
-      ctx.translate(-canvas.width, 0)
-
-      ctx.translate(canvas.width / 2, canvas.height / 2)
-      ctx.scale(SCALE, SCALE)
-      ctx.translate(-canvas.width / 2, -canvas.height / 2)
-
+      // No mirroring or scaling - just draw directly
       drawSkeleton(ctx, results.poseLandmarks)
-
-      ctx.restore()
 
     })
 

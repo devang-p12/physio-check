@@ -13,7 +13,10 @@ import AssignExercise from "./pages/DoctorAssignExercise";
 import PatientDashboard from "./pages/PatientDashboard";
 import ExerciseSession from "./pages/PatientExercise-Id";
 import AddPatient from "./pages/AddPatient";
-// import ProtectedRoute from "./components/ProtectedRoute";
+import PatientSessionHistory from "./pages/PatientSessionHistory";
+import SessionDetails from "./pages/SessionDetails";
+import DoctorPatientMonitoring from "./pages/DoctorPatientMonitoring";
+import PatientSettings from "./pages/PatientSettings";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 function App() {
@@ -90,6 +93,24 @@ function App() {
           }
         />
 
+        <Route
+          path="/doctor/patient/:patientId"
+          element={
+            <ProtectedRoute role="doctor">
+              <DoctorPatientMonitoring />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/doctor/session/:sessionId"
+          element={
+            <ProtectedRoute role="doctor">
+              <SessionDetails />
+            </ProtectedRoute>
+          }
+        />
+
         {/* PATIENT ROUTES */}
         <Route
           path="/patient"
@@ -101,10 +122,37 @@ function App() {
         />
 
         <Route
+          path="/patient/session/details/:sessionId"
+          element={
+            <ProtectedRoute role="patient">
+              <SessionDetails />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/patient/session"
           element={
             <ProtectedRoute role="patient">
               <ExerciseSession />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/patient/history"
+          element={
+            <ProtectedRoute role="patient">
+              <PatientSessionHistory />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/patient/settings"
+          element={
+            <ProtectedRoute role="patient">
+              <PatientSettings />
             </ProtectedRoute>
           }
         />
