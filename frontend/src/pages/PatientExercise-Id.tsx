@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   X,
   RefreshCcw,
@@ -7,21 +7,34 @@ import {
   CheckCircle2,
   AlertCircle,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { usePose } from "@/hooks/usePose";
+import { usePose } from "../hooks/usePose";
+import wsService from "../services/websocket.service";
+import { useGoogleFit } from "../hooks/useGoogleFit";
 
 const ExerciseSession = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const assignmentId = searchParams.get('id');
 
   const [isActive, setIsActive] = useState(false);
+  const [sessionId, setSessionId] = useState(null);
+  const [sessionMode, setSessionMode] = useState<'tracked' | 'manual'>('manual');
   const [reps, setReps] = useState(0);
   const [postureStatus, setPostureStatus] =
     useState<"correct" | "incorrect">("correct");
   const [timer, setTimer] = useState(0);
+  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  const [sessionEndTime, setSessionEndTime] = useState<Date | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const { isConnected: googleFitConnected, connect: connectGoogleFit } = useGoogleFit();
+  const [wsConnected, setWsConnected] = useState(false);
+  const [smartwatchEnabled, setSmartwatchEnabled] = useState(false);
+  const [predictedMode, setPredictedMode] = useState<'tracked' | 'manual'>('manual');
 
   /* ---------------- TIMER ---------------- */
   useEffect(() => {
@@ -31,14 +44,65 @@ const ExerciseSession = () => {
       interval = window.setInterval(() => {
         setTimer((prev) => prev + 1);
       }, 1000);
-    } else {
-      setTimer(0);
+    } else if (interval) {
+      clearInterval(interval);
     }
 
     return () => {
       if (interval) clearInterval(interval);
     };
   }, [isActive]);
+
+  /* ---------------- SMARTWATCH SETTINGS ---------------- */
+  useEffect(() => {
+    checkSmartwatchSettings();
+
+    const token = localStorage.getItem('token');
+    if (token && smartwatchEnabled) {
+      wsService.connect(token);
+    }
+
+    wsService.on('connected', () => setWsConnected(true));
+    wsService.on('disconnected', () => setWsConnected(false));
+    wsService.on('sensor_data_ack', (data: any) => {
+      console.log('Sensor data acknowledged:', data);
+    });
+
+    return () => {
+      if (smartwatchEnabled) {
+        wsService.disconnect();
+      }
+    };
+  }, [smartwatchEnabled]);
+
+  const checkSmartwatchSettings = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/settings', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const enabled = data.settings.smartwatchEnabled;
+        const connected = data.googleFit.connected;
+        
+        setSmartwatchEnabled(enabled);
+        setPredictedMode(enabled && connected ? 'tracked' : 'manual');
+        
+        console.log('Settings check:', {
+          smartwatchEnabled: enabled,
+          googleFitConnected: connected,
+          predictedMode: enabled && connected ? 'tracked' : 'manual'
+        });
+      }
+    } catch (error) {
+      console.error('Error checking smartwatch settings:', error);
+      setSmartwatchEnabled(false);
+      setPredictedMode('manual');
+    }
+  };
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -54,6 +118,128 @@ const ExerciseSession = () => {
     onRepUpdate: setReps,
     onPostureUpdate: setPostureStatus,
   });
+
+  /* ---------------- SESSION HANDLERS ---------------- */
+  const handleStartSession = async () => {
+    if (!assignmentId) {
+      alert('No assignment ID found');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('http://localhost:5000/session/start', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ assignmentId })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setSessionId(data.session.id);
+        setSessionMode(data.session.mode);
+        setIsActive(true);
+        setSessionStartTime(new Date());
+        
+        console.log('Session started:', data);
+        console.log('Session mode set to:', data.session.mode);
+        console.log('Current state - smartwatchEnabled:', smartwatchEnabled, 'sessionMode:', data.session.mode);
+        
+        if (data.warnings && data.warnings.length > 0) {
+          console.warn('Session warnings:', data.warnings);
+        }
+        
+        if (smartwatchEnabled && wsConnected) {
+          wsService.startSession(data.session.id);
+        }
+      } else {
+        const error = await response.json();
+        console.error('Failed to start session:', error);
+        alert(`Failed to start session: ${error.message || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error starting session:', error);
+      alert('Failed to start session');
+    }
+  };
+
+  const handleEndSession = async () => {
+    if (!sessionId) {
+      alert('No active session found');
+      return;
+    }
+
+    const endTime = new Date();
+    setSessionEndTime(endTime);
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('http://localhost:5000/session/complete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ sessionId })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setIsActive(false);
+        
+        if (smartwatchEnabled && wsConnected) {
+          wsService.endSession(sessionId);
+        }
+        
+        // Fetch historical data if smartwatch was enabled
+        if (smartwatchEnabled && sessionStartTime && sessionMode === 'tracked') {
+          setTimeout(async () => {
+            try {
+              const historyResponse = await fetch(
+                `http://localhost:5000/google-fit/history?startTime=${sessionStartTime.toISOString()}&endTime=${endTime.toISOString()}`,
+                {
+                  headers: {
+                    'Authorization': `Bearer ${token}`
+                  }
+                }
+              );
+
+              if (historyResponse.ok) {
+                const historyData = await historyResponse.json();
+                alert(
+                  `Session completed!\n\n` +
+                  `Reps: ${reps}\n` +
+                  `Duration: ${formatTime(timer)}\n\n` +
+                  `Heart Rate: ${historyData.avgHeartRate || 'N/A'} bpm (avg)\n` +
+                  `Calories: ${Math.round(historyData.totalCalories || 0)}`
+                );
+              } else {
+                alert(`Session completed!\n\nReps: ${reps}\nDuration: ${formatTime(timer)}`);
+              }
+            } catch (error) {
+              console.error('Error fetching historical data:', error);
+              alert(`Session completed!\n\nReps: ${reps}\nDuration: ${formatTime(timer)}`);
+            }
+            
+            navigate('/patient');
+          }, 2000); // Wait 2 seconds for Google Fit to sync
+        } else {
+          alert(`Session completed!\n\nReps: ${reps}\nDuration: ${formatTime(timer)}`);
+          navigate('/patient');
+        }
+      } else {
+        const error = await response.json();
+        console.error('Failed to complete session:', error);
+        alert(`Failed to complete session: ${error.message || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error ending session:', error);
+      alert('Failed to end session');
+    }
+  };
 
   return (
     <div className="h-screen bg-slate-900 flex flex-col md:flex-row overflow-hidden font-sans">
@@ -74,7 +260,7 @@ const ExerciseSession = () => {
         {/* SKELETON CANVAS */}
         <canvas
           ref={canvasRef}
-          className="absolute inset-0 z-10 pointer-events-none"
+          className="absolute inset-0 w-full h-full object-cover scale-x-[-1] z-10 pointer-events-none"
         />
 
         {/* Live Feedback Overlay */}
@@ -103,6 +289,7 @@ const ExerciseSession = () => {
             )}
           </div>
         </div>
+
       </div>
 
       {/* --- RIGHT SIDEBAR --- */}
@@ -149,12 +336,53 @@ const ExerciseSession = () => {
 
           {/* Instructions */}
           <div>
-            <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-xs">
-                i
-              </span>
-              Instructions
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                <span className="w-6 h-6 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-xs">
+                  i
+                </span>
+                Instructions
+              </h3>
+              
+              {/* Google Fit Status Badge */}
+              {isActive ? (
+                // Show actual session mode when session is active
+                smartwatchEnabled && sessionMode === 'tracked' ? (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-green-100 rounded-full border border-green-300">
+                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                    <span className="text-xs font-bold text-green-700">Google Fit Enabled</span>
+                  </div>
+                ) : smartwatchEnabled && sessionMode === 'manual' ? (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-yellow-100 rounded-full border border-yellow-300">
+                    <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
+                    <span className="text-xs font-bold text-yellow-700">Manual Mode</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-full border border-slate-300">
+                    <div className="w-2 h-2 rounded-full bg-slate-400"></div>
+                    <span className="text-xs font-bold text-slate-600">Tracking Off</span>
+                  </div>
+                )
+              ) : (
+                // Show predicted mode before session starts
+                smartwatchEnabled && predictedMode === 'tracked' ? (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-green-100 rounded-full border border-green-300">
+                    <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                    <span className="text-xs font-bold text-green-700">Google Fit</span>
+                  </div>
+                ) : smartwatchEnabled ? (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-yellow-100 rounded-full border border-yellow-300">
+                    <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
+                    <span className="text-xs font-bold text-yellow-700">Manual Mode</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-full border border-slate-300">
+                    <div className="w-2 h-2 rounded-full bg-slate-400"></div>
+                    <span className="text-xs font-bold text-slate-600">Tracking Off</span>
+                  </div>
+                )
+              )}
+            </div>
             <ul className="space-y-4">
               {[
                 "Stand with feet shoulder-width apart.",
@@ -186,7 +414,7 @@ const ExerciseSession = () => {
         <div className="p-6 border-t border-slate-100 bg-white">
           {!isActive ? (
             <button
-              onClick={() => setIsActive(true)}
+              onClick={handleStartSession}
               className="w-full bg-teal-500 hover:bg-teal-600 text-white text-lg font-bold py-4 rounded-xl shadow-lg shadow-teal-500/30 flex items-center justify-center gap-2"
             >
               <Play size={24} fill="currentColor" />
@@ -207,7 +435,10 @@ const ExerciseSession = () => {
               >
                 <RefreshCcw size={20} />
               </button>
-              <button className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 rounded-xl shadow-lg">
+              <button 
+                onClick={handleEndSession}
+                className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 rounded-xl shadow-lg"
+              >
                 Finish
               </button>
             </div>
