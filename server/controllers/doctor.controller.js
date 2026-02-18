@@ -1,3 +1,4 @@
+import User from "../models/User.model.js";
 import { findUserById } from "../models/User.model.js";
 import { findExerciseById } from "../models/Exercise.model.js";
 import { createAssignment } from "../models/Assignment.model.js";
@@ -60,7 +61,21 @@ export const assignExercise = async (req, res) => {
   }
 };
 
+export const getAllDoctors = async (req, res) => {
+  try {
+    // We find all users where the role is 'doctor'
+    // We use .select() to only return public info (no passwords!)
+    const doctors = await User.find({ role: "doctor" }).select("name email specialization");
 
+    return res.status(200).json({
+      success: true,
+      doctors,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Error fetching doctors" });
+  }
+};
 
 
 
