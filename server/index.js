@@ -3,6 +3,7 @@ import cors from "cors";
 import authRoutes from "./routes/auth.routes.js";
 import doctorRoutes from "./routes/doctor.routes.js";
 import patientRoutes from "./routes/patient.routes.js";
+import appointmentRoutes from "./routes/appointment.routes.js"
 import { connectDB } from "./data/db.js";
 
 console.log("🔥 PhysioCheck backend started");
@@ -25,6 +26,8 @@ app.use("/auth", authRoutes);
 app.use("/doctor", doctorRoutes);
 
 app.use("/patient", patientRoutes);
+
+app.use("/appointment",appointmentRoutes);
 
 // 404 LAST
 app.use((req, res) => {
