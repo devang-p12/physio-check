@@ -8,6 +8,8 @@ import {
   Trophy,
   Clock,
   LogOut,
+  UserRoundSearch, // Added for Doctor Search icon
+  ChevronRight     // Added for navigation hint
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
@@ -53,11 +55,21 @@ const PatientDashboard = () => {
     <div className="min-h-screen bg-slate-50 font-sans pb-20">
       {/* ===== NAVBAR ===== */}
       <nav className="bg-white px-6 py-4 flex justify-between items-center sticky top-0 z-30 border-b border-slate-100 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-teal-50 rounded-lg flex items-center justify-center text-teal-600">
-            <Activity size={20} strokeWidth={2.5} />
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-teal-50 rounded-lg flex items-center justify-center text-teal-600">
+              <Activity size={20} strokeWidth={2.5} />
+            </div>
+            <span className="font-bold text-slate-900">PhysioCheck</span>
           </div>
-          <span className="font-bold text-slate-900">PhysioCheck</span>
+
+          {/* 🔗 Navbar link to Doctors */}
+          <button 
+            onClick={() => navigate("/patient/doctors")}
+            className="hidden md:block text-sm font-semibold text-slate-600 hover:text-teal-600 transition"
+          >
+            Find a Doctor
+          </button>
         </div>
 
         <div className="flex items-center gap-4">
@@ -69,7 +81,6 @@ const PatientDashboard = () => {
             className="w-8 h-8 rounded-full border"
           />
 
-          {/* LOGOUT */}
           <button
             onClick={handleLogout}
             className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
@@ -83,13 +94,32 @@ const PatientDashboard = () => {
       {/* ===== MAIN ===== */}
       <main className="max-w-3xl mx-auto px-4 py-6 space-y-6">
         {/* GREETING */}
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">
-            Good morning, {patientName}! ☀️
-          </h1>
-          <p className="text-slate-500 text-sm">
-            Ready to continue your recovery?
-          </p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">
+              Good morning, {patientName}! ☀️
+            </h1>
+            <p className="text-slate-500 text-sm">
+              Ready to continue your recovery?
+            </p>
+          </div>
+        </div>
+
+        {/* 🏥 FIND DOCTOR QUICK ACTION */}
+        <div 
+          onClick={() => navigate("/patient/doctors")}
+          className="bg-white border border-teal-100 rounded-2xl p-4 flex items-center justify-between cursor-pointer hover:bg-teal-50/50 transition shadow-sm group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-teal-100 rounded-xl flex items-center justify-center text-teal-600">
+              <UserRoundSearch size={24} />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-900">Find Physiotherapists</h3>
+              <p className="text-xs text-slate-500">Book a session or find a new specialist</p>
+            </div>
+          </div>
+          <ChevronRight size={20} className="text-slate-300 group-hover:text-teal-600" />
         </div>
 
         {/* PROGRESS */}
