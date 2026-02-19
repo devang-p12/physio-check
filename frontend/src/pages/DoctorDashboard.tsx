@@ -6,11 +6,10 @@ import {
   LogOut,
   Search,
   Bell,
-  Plus,
   ChevronRight,
   TrendingUp,
-  UserPlus,
-  MoreHorizontal
+  MoreHorizontal,
+  CalendarDays // Added for the new button
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
@@ -33,7 +32,7 @@ const DoctorDashboard = () => {
       const data = await apiFetch("/doctor/patients");
       const enrichedPatients = (data.patients || []).map((p) => ({
         ...p,
-        progress: Math.floor(Math.random() * 100), // Real logic would compute this
+        progress: Math.floor(Math.random() * 100),
         lastSeen: "2 hours ago",
         status: Math.random() > 0.3 ? "On Track" : "Delayed",
       }));
@@ -64,7 +63,7 @@ const DoctorDashboard = () => {
     },
     {
       label: "Active Plans",
-      value: patients.length, // Logic kept intact
+      value: patients.length,
       icon: Activity,
       color: "text-emerald-600",
       bg: "bg-emerald-100/50",
@@ -72,7 +71,7 @@ const DoctorDashboard = () => {
     },
     {
       label: "Today's Sessions",
-      value: "12", // Logic kept intact
+      value: "12",
       icon: Calendar,
       color: "text-violet-600",
       bg: "bg-violet-100/50",
@@ -85,7 +84,7 @@ const DoctorDashboard = () => {
       {/* NAVBAR */}
       <nav className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-6 flex justify-between h-16 items-center">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => navigate("/doctor")}>
             <div className="w-9 h-9 bg-teal-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-teal-200">
               <Activity size={20} strokeWidth={2.5} />
             </div>
@@ -95,6 +94,15 @@ const DoctorDashboard = () => {
           </div>
 
           <div className="flex items-center gap-6">
+            {/* Added Calendar Link in Navbar for quick access */}
+            <button 
+              onClick={() => navigate("/doctor/calendar")}
+              className="hidden sm:flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-teal-600 transition-colors"
+            >
+              <Calendar size={18} />
+              Schedule
+            </button>
+
             <button className="relative p-2 text-slate-400 hover:bg-slate-50 rounded-full transition-colors">
               <Bell size={20} />
               <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
@@ -131,12 +139,13 @@ const DoctorDashboard = () => {
             <p className="text-slate-500 font-medium">Monitoring {patients.length} active recovery tracks</p>
           </div>
 
+          {/* Replaced Add Patient with View Calendar */}
           <button
-            onClick={() => navigate("/doctor/add-patient")}
-            className="flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-xl shadow-slate-200 active:scale-95"
+            onClick={() => navigate("/doctor/calendar")}
+            className="flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-xl shadow-teal-100 active:scale-95"
           >
-            <UserPlus size={18} />
-            Add New Patient
+            <CalendarDays size={18} />
+            View Calendar
           </button>
         </div>
 
@@ -179,7 +188,7 @@ const DoctorDashboard = () => {
           </div>
         </div>
 
-        {/* PATIENT GRID */}
+        {/* PATIENT GRID (The rest remains logic-intact) */}
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 space-y-4">
             <div className="w-10 h-10 border-4 border-teal-500/20 border-t-teal-500 rounded-full animate-spin"></div>
@@ -191,7 +200,7 @@ const DoctorDashboard = () => {
               <Users size={32} />
             </div>
             <h3 className="text-lg font-bold text-slate-900">No patients found</h3>
-            <p className="text-slate-500 max-w-xs mx-auto mt-1">Try adjusting your search or add a new patient to your list.</p>
+            <p className="text-slate-500 max-w-xs mx-auto mt-1">Accept a request in the calendar to see patients here.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -200,6 +209,7 @@ const DoctorDashboard = () => {
                 key={patient.id}
                 className="group bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 overflow-hidden"
               >
+                {/* ... (Existing patient card content) */}
                 <div className="p-6">
                   <div className="flex justify-between items-start mb-4">
                     <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 font-bold text-xl group-hover:bg-teal-50 group-hover:text-teal-600 transition-colors">
@@ -213,7 +223,6 @@ const DoctorDashboard = () => {
                   <h3 className="font-bold text-lg group-hover:text-teal-700 transition-colors">{patient.name}</h3>
                   <p className="text-xs font-medium text-slate-400 mb-6">{patient.email}</p>
 
-                  {/* Progress Section */}
                   <div className="space-y-3">
                     <div className="flex justify-between items-end">
                       <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Recovery Progress</span>
@@ -227,7 +236,6 @@ const DoctorDashboard = () => {
                     </div>
                   </div>
 
-                  {/* Action Buttons */}
                   <div className="flex gap-3 mt-8">
                     <button
                       className="flex-[3] bg-teal-50 hover:bg-teal-100 text-teal-700 py-3 rounded-xl text-xs font-bold transition-colors"
@@ -236,7 +244,7 @@ const DoctorDashboard = () => {
                       Assign Exercise
                     </button>
                     <button 
-                       onClick={() => navigate(`/doctor/patient/${patient.id}`)} // Added logic for a detail view
+                       onClick={() => navigate(`/doctor/patient/${patient.id}`)}
                        className="flex-1 flex items-center justify-center border border-slate-100 hover:bg-slate-50 text-slate-400 hover:text-slate-600 rounded-xl transition-all"
                     >
                       <ChevronRight size={18} />

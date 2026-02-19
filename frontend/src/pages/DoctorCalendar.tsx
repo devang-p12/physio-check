@@ -10,7 +10,7 @@ const DoctorCalendar = () => {
   });
   
   const token = localStorage.getItem('token');
-  const BASE_URL = "http://localhost:5000"; // Explicitly targeting your backend port
+  const BASE_URL = "http://localhost:5000";
 
   useEffect(() => {
     fetchAppointments();
@@ -39,14 +39,13 @@ const DoctorCalendar = () => {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}` 
         },
-        body: JSON.stringify(form) // Matches: { dayOfWeek: 1, startTime: "10:00", endTime: "10:30" }
+        body: JSON.stringify(form)
       });
-
-      const data = await response.json();
 
       if (response.ok) {
         alert("Availability set successfully!");
       } else {
+        const data = await response.json();
         alert(data.message || "Failed to set availability");
       }
     } catch (err) {
@@ -56,8 +55,13 @@ const DoctorCalendar = () => {
     }
   };
 
-  const updateStatus = async (appointmentId: string, status: string) => {
+  /**
+   * UPDATED: updateStatus now optionally triggers auto-adding the patient
+   * to the doctor's directory if approved.
+   */
+  const updateStatus = async (appointmentId: string, status: string, patientEmail?: string) => {
     try {
+      // 1. Update the appointment status (Approved/Rejected)
       const res = await fetch(`${BASE_URL}/appointment/update`, {
         method: "PATCH",
         headers: { 
@@ -66,9 +70,37 @@ const DoctorCalendar = () => {
         },
         body: JSON.stringify({ appointmentId, status })
       });
-      if (res.ok) fetchAppointments();
+
+      if (res.ok) {
+        // 2. If status is 'approved', automatically add patient to doctor's list
+        if (status === 'approved' && patientEmail) {
+          await autoAddPatientToDirectory(patientEmail);
+        }
+        fetchAppointments();
+      } else {
+        alert("Update failed at server");
+      }
     } catch (err) {
       alert("Update failed");
+    }
+  };
+
+  const autoAddPatientToDirectory = async (email: string) => {
+    try {
+      const res = await fetch(`${BASE_URL}/doctor/add-patient`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}` 
+        },
+        body: JSON.stringify({ patientEmail: email })
+      });
+      
+      if (res.ok) {
+        console.log(`Patient ${email} successfully added to directory.`);
+      }
+    } catch (err) {
+      console.error("Automatic patient addition failed", err);
     }
   };
 
@@ -146,7 +178,8 @@ const DoctorCalendar = () => {
                   <tr key={apt._id} className="hover:bg-gray-50 transition">
                     <td className="py-4 px-2">
                       <p className="font-bold text-gray-800">{apt.patientId?.name || "Unknown"}</p>
-                      <p className="text-xs text-gray-500">{apt.reason || "General Checkup"}</p>
+                      <p className="text-[10px] text-blue-500">{apt.patientId?.email}</p>
+                      <p className="text-xs text-gray-500 italic">"{apt.reason || "General Checkup"}"</p>
                     </td>
                     <td className="py-4 px-2 text-sm">
                       {new Date(apt.startTime).toLocaleString('en-US', { 
@@ -165,11 +198,11 @@ const DoctorCalendar = () => {
                       {apt.status === 'pending' && (
                         <div className="flex justify-end gap-2">
                           <button 
-                            onClick={() => updateStatus(apt._id, 'approved')}
-                            className="bg-green-500 text-white p-1.5 rounded-lg hover:bg-green-600 transition"
-                            title="Approve"
+                            onClick={() => updateStatus(apt._id, 'approved', apt.patientId?.email)}
+                            className="bg-green-500 text-white p-1.5 rounded-lg hover:bg-green-600 transition flex items-center gap-1 text-xs px-2"
+                            title="Approve and Add Patient"
                           >
-                            ✓
+                            ✓ Approve
                           </button>
                           <button 
                             onClick={() => updateStatus(apt._id, 'rejected')}

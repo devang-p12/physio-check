@@ -1,147 +1,152 @@
-import { useEffect, RefObject } from "react"
-import { Pose, Results } from "@mediapipe/pose"
-import { Camera } from "@mediapipe/camera_utils"
-import { processPose, resetPoseState } from "@/utils/poseLogic"
+import { useEffect, RefObject } from "react";
+import { Pose, Results, LandmarkList } from "@mediapipe/pose";
+import { Camera } from "@mediapipe/camera_utils";
+import { processPose, resetPoseState } from "@/utils/poseLogic";
 
 interface Props {
-  videoRef: RefObject<HTMLVideoElement>
-  canvasRef: RefObject<HTMLCanvasElement>
-  isActive: boolean
-  onRepUpdate: (reps: number) => void
-  onPostureUpdate: (status: "correct" | "incorrect") => void
+  videoRef: RefObject<HTMLVideoElement>;
+  canvasRef: RefObject<HTMLCanvasElement>;
+  isActive: boolean;
+  isRecording?: boolean;
+  onFrameCapture?: (landmarks: LandmarkList) => void;
+  onRepUpdate: (reps: number) => void;
+  onPostureUpdate: (status: "correct" | "incorrect") => void;
+  // NEW: Pass the target peak pose to draw the ghost skeleton
+  ghostPose?: LandmarkList | null; 
 }
 
 export function usePose({
   videoRef,
   canvasRef,
   isActive,
+  isRecording = false,
+  onFrameCapture,
   onRepUpdate,
-  onPostureUpdate
+  onPostureUpdate,
+  ghostPose = null,
 }: Props) {
   useEffect(() => {
-    if (!isActive || !videoRef.current || !canvasRef.current) return
+    if (!isActive || !videoRef.current || !canvasRef.current) return;
 
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    const ctx = canvas.getContext("2d")!
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d")!;
 
-    resetPoseState()
+    resetPoseState();
 
     const pose = new Pose({
-      locateFile: (f) =>
-        `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`
-    })
+      locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`
+    });
 
     pose.setOptions({
       modelComplexity: 1,
       smoothLandmarks: true,
       minDetectionConfidence: 0.6,
       minTrackingConfidence: 0.6
-    })
+    });
 
     pose.onResults((results: Results) => {
-      if (!results.poseLandmarks) return
+      if (!results.poseLandmarks) return;
 
-      // 🔑 Sync canvas size
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
 
-      const SCALE = 1.15 
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const { reps, posture } = processPose(results.poseLandmarks)
+      // --- RECORDING LOGIC ---
+      if (isRecording && onFrameCapture) {
+        onFrameCapture(results.poseLandmarks);
+      }
 
-      onRepUpdate(reps)
-      onPostureUpdate(posture)
+      // --- EXERCISE LOGIC ---
+      const { reps, posture } = processPose(results.poseLandmarks);
+      onRepUpdate(reps);
+      onPostureUpdate(posture);
 
-      ctx.save()
-      ctx.scale(-1, 1)
-      ctx.translate(-canvas.width, 0)
+      // --- DRAWING ---
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.translate(-canvas.width, 0);
 
-      ctx.translate(canvas.width / 2, canvas.height / 2)
-      ctx.scale(SCALE, SCALE)
-      ctx.translate(-canvas.width / 2, -canvas.height / 2)
+      // 1. Draw the "Ghost" Skeleton (Target/Peak Pose)
+      if (ghostPose) {
+        // Render in semi-transparent white with thinner lines
+        drawSkeleton(ctx, ghostPose, "rgba(255, 255, 255, 0.3)", 4);
+      }
 
-      drawSkeleton(ctx, results.poseLandmarks)
+      // 2. Draw the Live Camera Skeleton
+      drawSkeleton(ctx, results.poseLandmarks, "#14B8A6", 8);
 
-      ctx.restore()
-
-    })
+      ctx.restore();
+    });
 
     const camera = new Camera(video, {
       onFrame: async () => {
-        await pose.send({ image: video })
+        await pose.send({ image: video });
       },
       width: 640,
       height: 480
-    })
+    });
 
-    camera.start()
+    camera.start();
 
     return () => {
-      camera.stop()
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-    }
-  }, [isActive])
+      camera.stop();
+      pose.close();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    };
+  }, [isActive, isRecording, ghostPose]); // Depend on ghostPose to re-render
 }
 
 /* ---------- Skeleton Drawing ---------- */
+/**
+ * Updated to support dynamic colors and thickness
+ */
 function drawSkeleton(
   ctx: CanvasRenderingContext2D,
-  lm: any[]
+  lm: any[],
+  color: string,
+  lineWidth: number
 ) {
-  ctx.strokeStyle = "#14B8A6"
-  ctx.lineWidth = 8
-  ctx.lineCap = "round"
-  ctx.fillStyle = "#14B8A6"
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.lineCap = "round";
+  ctx.fillStyle = color;
 
-  const W = ctx.canvas.width
-  const H = ctx.canvas.height
+  const W = ctx.canvas.width;
+  const H = ctx.canvas.height;
 
   // Helper to draw line
   const line = (a: number, b: number) => {
-    ctx.beginPath()
-    ctx.moveTo(lm[a].x * W, lm[a].y * H)
-    ctx.lineTo(lm[b].x * W, lm[b].y * H)
-    ctx.stroke()
-  }
+    if (!lm[a] || !lm[b]) return;
+    ctx.beginPath();
+    ctx.moveTo(lm[a].x * W, lm[a].y * H);
+    ctx.lineTo(lm[b].x * W, lm[b].y * H);
+    ctx.stroke();
+  };
 
   // Helper to draw joint
   const joint = (i: number) => {
-    ctx.beginPath()
-    ctx.arc(lm[i].x * W, lm[i].y * H, 6, 0, Math.PI * 2)
-    ctx.fill()
-  }
+    if (!lm[i]) return;
+    ctx.beginPath();
+    ctx.arc(lm[i].x * W, lm[i].y * H, lineWidth * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+  };
 
   /* -------- TORSO -------- */
-  line(11, 12) // shoulders
-  line(11, 23) // left torso
-  line(12, 24) // right torso
-  line(23, 24) // hips
+  line(11, 12); // shoulders
+  line(11, 23); // left torso
+  line(12, 24); // right torso
+  line(23, 24); // hips
 
-  /* -------- LEFT ARM -------- */
-  line(11, 13)
-  line(13, 15)
+  /* -------- ARMS -------- */
+  line(11, 13); line(13, 15); // left
+  line(12, 14); line(14, 16); // right
 
-  /* -------- RIGHT ARM -------- */
-  line(12, 14)
-  line(14, 16)
-
-  /* -------- LEFT LEG -------- */
-  line(23, 25)
-  line(25, 27)
-
-  /* -------- RIGHT LEG -------- */
-  line(24, 26)
-  line(26, 28)
+  /* -------- LEGS -------- */
+  line(23, 25); line(25, 27); // left
+  line(24, 26); line(26, 28); // right
 
   /* -------- JOINTS -------- */
-  ;[
-    11, 12, // shoulders
-    13, 14, // elbows
-    15, 16, // wrists
-    23, 24, // hips
-    25, 26, // knees
-    27, 28  // ankles
-  ].forEach(joint)
+  [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28].forEach(joint);
 }
