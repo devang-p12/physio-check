@@ -20,6 +20,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import DoctorTodaysAssignments from "./pages/DoctorTodaysAssignments";
 import SessionPage from "./pages/SessionPage";
 import ChatbotPage from "./pages/Chatbot";
+import CreateExercise from "./pages/CreateExercise"; // ← new
 
 function App() {
   const token = localStorage.getItem("token");
@@ -62,6 +63,7 @@ function App() {
         <Route path="/doctor/add-patient" element={<ProtectedRoute role="doctor"><AddPatient /></ProtectedRoute>} />
         <Route path="/doctor/calendar" element={<ProtectedRoute role="doctor"><DoctorCalendar /></ProtectedRoute>} />
         <Route path="/doctor/today" element={<ProtectedRoute role="doctor"><DoctorTodaysAssignments /></ProtectedRoute>} />
+        <Route path="/doctor/create-exercise" element={<ProtectedRoute role="doctor"><CreateExercise /></ProtectedRoute>} /> {/* ← new */}
 
         {/* ========================= */}
         {/* PATIENT ROUTES */}
