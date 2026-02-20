@@ -1,4 +1,5 @@
 import { getAssignmentsByPatient } from "../models/Assignment.model.js";
+import { findAssignmentById } from "../models/Assignment.model.js";
 
 export const getTodaysExercises = async (req, res) => {
   const patientId = req.user.id;
@@ -41,5 +42,32 @@ export const getTodaysExercises = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// import { findAssignmentById } from "../models/Assignment.model.js";
+
+export const getAssignmentDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log("🔍 Searching for Assignment ID:", id);
+
+    const assignment = await findAssignmentById(id);
+
+    if (!assignment) {
+      console.log("❌ NOT FOUND: No assignment exists with that ID.");
+      return res.status(404).json({ message: "Assignment not found in database" });
+    }
+
+    console.log("✅ FOUND: Assignment exists. Now populating exercise...");
+    const populated = await assignment.populate("exerciseId");
+    
+    res.json({
+      exercise: populated.exerciseId,
+      prescription: populated.prescription
+    });
+  } catch (error) {
+    console.error("🔥 DATABASE CRASH:", error.message);
+    res.status(500).json({ message: "Server error during DB query" });
   }
 };
