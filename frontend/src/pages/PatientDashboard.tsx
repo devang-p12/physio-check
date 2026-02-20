@@ -8,33 +8,29 @@ import {
   Trophy,
   Clock,
   LogOut,
-  UserRoundSearch, // Added for Doctor Search icon
-  ChevronRight     // Added for navigation hint
+  UserRoundSearch,
+  ChevronRight,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
 
 const PatientDashboard = () => {
   const navigate = useNavigate();
-
   const [exercises, setExercises] = useState([]);
   const [loading, setLoading] = useState(true);
   const [patientName, setPatientName] = useState("Patient");
 
-  // 🔐 Load name + fetch exercises
   useEffect(() => {
     const name = localStorage.getItem("name");
     if (name) setPatientName(name);
     fetchTodayExercises();
   }, []);
 
-  // 🚪 Logout
   const handleLogout = () => {
     localStorage.clear();
     navigate("/login");
   };
 
-  // 📡 Fetch today’s exercises
   const fetchTodayExercises = async () => {
     setLoading(true);
     try {
@@ -62,25 +58,20 @@ const PatientDashboard = () => {
             </div>
             <span className="font-bold text-slate-900">PhysioCheck</span>
           </div>
-
-          {/* 🔗 Navbar link to Doctors */}
-          <button 
+          <button
             onClick={() => navigate("/patient/doctors")}
             className="hidden md:block text-sm font-semibold text-slate-600 hover:text-teal-600 transition"
           >
             Find a Doctor
           </button>
         </div>
-
         <div className="flex items-center gap-4">
           <Bell size={20} className="text-slate-400" />
-
           <img
             src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${patientName}`}
             alt="User"
             className="w-8 h-8 rounded-full border"
           />
-
           <button
             onClick={handleLogout}
             className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
@@ -105,8 +96,8 @@ const PatientDashboard = () => {
           </div>
         </div>
 
-        {/* 🏥 FIND DOCTOR QUICK ACTION */}
-        <div 
+        {/* FIND DOCTOR */}
+        <div
           onClick={() => navigate("/patient/doctors")}
           className="bg-white border border-teal-100 rounded-2xl p-4 flex items-center justify-between cursor-pointer hover:bg-teal-50/50 transition shadow-sm group"
         >
@@ -129,29 +120,12 @@ const PatientDashboard = () => {
             <h2 className="text-3xl font-bold">
               {completedCount}/{totalCount} Exercises
             </h2>
-
             <div className="relative w-16 h-16 mt-4">
               <svg className="w-full h-full transform -rotate-90">
-                <circle
-                  cx="32"
-                  cy="32"
-                  r="28"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                  fill="transparent"
-                  className="text-teal-700/30"
-                />
-                <circle
-                  cx="32"
-                  cy="32"
-                  r="28"
-                  stroke="white"
-                  strokeWidth="4"
-                  fill="transparent"
+                <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="transparent" className="text-teal-700/30" />
+                <circle cx="32" cy="32" r="28" stroke="white" strokeWidth="4" fill="transparent"
                   strokeDasharray={175}
-                  strokeDashoffset={
-                    175 - (175 * progressPercentage) / 100
-                  }
+                  strokeDashoffset={175 - (175 * progressPercentage) / 100}
                   strokeLinecap="round"
                 />
               </svg>
@@ -160,7 +134,6 @@ const PatientDashboard = () => {
               </span>
             </div>
           </div>
-
           <div className="bg-white rounded-2xl p-6 border shadow-sm text-center">
             <Flame className="mx-auto text-orange-500" />
             <h3 className="text-2xl font-bold mt-2">12 Days</h3>
@@ -168,60 +141,79 @@ const PatientDashboard = () => {
           </div>
         </div>
 
-        {/* TODAY’S EXERCISES */}
+        {/* TODAY'S EXERCISES */}
         <div>
           <h2 className="text-lg font-bold mb-3">Today's Plan</h2>
-
-          {loading && (
-            <p className="text-slate-500 text-sm">Loading exercises...</p>
-          )}
-
+          {loading && <p className="text-slate-500 text-sm">Loading exercises...</p>}
           {!loading && exercises.length === 0 && (
-            <p className="text-slate-500 text-sm">
-              🎉 No exercises assigned for today
-            </p>
+            <p className="text-slate-500 text-sm">🎉 No exercises assigned for today</p>
           )}
-
-          <div className="space-y-4">
+          <div className="space-y-3">
             {exercises.map((ex) => {
-              const prescription = typeof ex.prescription === 'string' 
-                ? JSON.parse(ex.prescription) 
-                : ex.prescription;
+              const prescription =
+                typeof ex.prescription === "string"
+                  ? JSON.parse(ex.prescription)
+                  : ex.prescription;
               const repsText = `${prescription.sets} sets × ${prescription.repsPerSet} reps`;
 
               return (
                 <div
                   key={ex.id}
-                  className="bg-white rounded-2xl p-4 border shadow-sm flex items-center gap-4"
+                  className={`relative bg-white rounded-2xl p-4 border shadow-sm flex items-center gap-4 transition-all duration-300 ${
+                    ex.completed ? "opacity-55" : ""
+                  }`}
                 >
-                  <div className="w-14 h-14 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center">
-                    {ex.completed ? (
-                      <CheckCircle2 size={24} />
-                    ) : (
-                      <Activity size={24} />
-                    )}
+                  {/* Strikethrough line overlay */}
+                  {ex.completed && (
+                    <div className="absolute inset-0 flex items-center px-4 pointer-events-none">
+                      <div className="w-full h-[1.5px] bg-slate-300 rounded-full" />
+                    </div>
+                  )}
+
+                  {/* Icon */}
+                  <div
+                    className={`w-14 h-14 rounded-xl flex items-center justify-center shrink-0 ${
+                      ex.completed
+                        ? "bg-green-50 text-green-400"
+                        : "bg-teal-50 text-teal-600"
+                    }`}
+                  >
+                    {ex.completed ? <CheckCircle2 size={24} /> : <Activity size={24} />}
                   </div>
 
-                  <div className="flex-1">
-                    <h3 className="font-bold text-lg">
+                  {/* Text */}
+                  <div className="flex-1 min-w-0">
+                    <h3
+                      className={`font-bold text-lg leading-tight ${
+                        ex.completed ? "text-slate-400" : "text-slate-900"
+                      }`}
+                    >
                       {ex.exercise ? ex.exercise.name : `Exercise #${ex.exerciseId}`}
                     </h3>
-                    <div className="flex items-center gap-4 text-xs text-slate-500">
+                    <div
+                      className={`flex items-center gap-4 text-xs mt-0.5 ${
+                        ex.completed ? "text-slate-300" : "text-slate-500"
+                      }`}
+                    >
                       <span className="flex items-center gap-1">
                         <Trophy size={12} /> {repsText}
                       </span>
                       <span className="flex items-center gap-1">
-                        <Clock size={12} /> {ex.exercise?.duration ? `~${ex.exercise.duration} sec` : '~10 min'}
+                        <Clock size={12} />{" "}
+                        {ex.exercise?.duration ? `~${ex.exercise.duration} sec` : "~10 min"}
                       </span>
                     </div>
                   </div>
 
-                  {!ex.completed && (
+                  {/* Action */}
+                  {ex.completed ? (
+                    <span className="shrink-0 text-xs font-semibold text-green-500 bg-green-50 px-3 py-1 rounded-full border border-green-100">
+                      Done ✓
+                    </span>
+                  ) : (
                     <button
-                      className="w-10 h-10 rounded-full bg-teal-500 text-white flex items-center justify-center"
-                      onClick={() =>
-                        navigate(`/patient/session?id=${ex.id}`)
-                      }
+                      className="shrink-0 w-10 h-10 rounded-full bg-teal-500 hover:bg-teal-600 text-white flex items-center justify-center transition-colors shadow-md shadow-teal-100"
+                      onClick={() => navigate(`/patient/session?id=${ex.id}`)}
                     >
                       <Play size={18} />
                     </button>

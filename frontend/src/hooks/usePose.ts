@@ -11,8 +11,8 @@ interface Props {
   onFrameCapture?: (landmarks: LandmarkList) => void;
   onRepUpdate: (reps: number) => void;
   onPostureUpdate: (status: "correct" | "incorrect") => void;
-  // NEW: Pass the target peak pose to draw the ghost skeleton
-  ghostPose?: LandmarkList | null; 
+  ghostPose?: LandmarkList | null;
+  resetSignal?: number;
 }
 
 export function usePose({
@@ -24,7 +24,15 @@ export function usePose({
   onRepUpdate,
   onPostureUpdate,
   ghostPose = null,
+  resetSignal,
 }: Props) {
+  // Reset pose state when resetSignal changes (i.e. between sets)
+  useEffect(() => {
+    if (resetSignal !== undefined && resetSignal > 0) {
+      resetPoseState();
+    }
+  }, [resetSignal]);
+
   useEffect(() => {
     if (!isActive || !videoRef.current || !canvasRef.current) return;
 
@@ -35,14 +43,14 @@ export function usePose({
     resetPoseState();
 
     const pose = new Pose({
-      locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`
+      locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`,
     });
 
     pose.setOptions({
       modelComplexity: 1,
       smoothLandmarks: true,
       minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6
+      minTrackingConfidence: 0.6,
     });
 
     pose.onResults((results: Results) => {
@@ -52,6 +60,15 @@ export function usePose({
       canvas.height = video.videoHeight;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // --- DRAW MIRRORED VIDEO FRAME ONTO CANVAS ---
+      // This replaces the <video> element as the visual background,
+      // ensuring the video feed and skeleton are both mirrored consistently.
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.translate(-canvas.width, 0);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      ctx.restore();
 
       // --- RECORDING LOGIC ---
       if (isRecording && onFrameCapture) {
@@ -63,18 +80,17 @@ export function usePose({
       onRepUpdate(reps);
       onPostureUpdate(posture);
 
-      // --- DRAWING ---
+      // --- DRAW SKELETON (mirrored to match video) ---
       ctx.save();
       ctx.scale(-1, 1);
       ctx.translate(-canvas.width, 0);
 
-      // 1. Draw the "Ghost" Skeleton (Target/Peak Pose)
+      // 1. Ghost skeleton (target/peak pose)
       if (ghostPose) {
-        // Render in semi-transparent white with thinner lines
         drawSkeleton(ctx, ghostPose, "rgba(255, 255, 255, 0.3)", 4);
       }
 
-      // 2. Draw the Live Camera Skeleton
+      // 2. Live skeleton
       drawSkeleton(ctx, results.poseLandmarks, "#14B8A6", 8);
 
       ctx.restore();
@@ -85,7 +101,7 @@ export function usePose({
         await pose.send({ image: video });
       },
       width: 640,
-      height: 480
+      height: 480,
     });
 
     camera.start();
@@ -95,13 +111,10 @@ export function usePose({
       pose.close();
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     };
-  }, [isActive, isRecording, ghostPose]); // Depend on ghostPose to re-render
+  }, [isActive, isRecording, ghostPose]);
 }
 
 /* ---------- Skeleton Drawing ---------- */
-/**
- * Updated to support dynamic colors and thickness
- */
 function drawSkeleton(
   ctx: CanvasRenderingContext2D,
   lm: any[],
@@ -116,7 +129,6 @@ function drawSkeleton(
   const W = ctx.canvas.width;
   const H = ctx.canvas.height;
 
-  // Helper to draw line
   const line = (a: number, b: number) => {
     if (!lm[a] || !lm[b]) return;
     ctx.beginPath();
@@ -125,7 +137,6 @@ function drawSkeleton(
     ctx.stroke();
   };
 
-  // Helper to draw joint
   const joint = (i: number) => {
     if (!lm[i]) return;
     ctx.beginPath();
