@@ -50,6 +50,8 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 
+export default User;
+
 export const createUser = async (userData) => {
   const user = new User(userData);
   return await user.save();
