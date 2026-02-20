@@ -1,4 +1,4 @@
-import { getAssignmentsByPatient } from "../models/Assignment.model.js";
+import { getAssignmentsByPatient, findAssignmentById } from "../models/Assignment.model.js";
 import Session from "../models/Session.model.js";
 
 const utcDateStr = (d) => d.toISOString().split('T')[0];
@@ -28,15 +28,22 @@ export const getTodaysExercises = async (req, res) => {
 
     const todaysExercises = allAssignments.filter((a) => {
       const assignmentDate = new Date(a.date).toISOString().split("T")[0];
-      return assignmentDate === today && !a.completed;
+      return assignmentDate === today;
     });
 
     // Compute streak + total sessions across all assignments
     const allSessions = await Session.find({ patientId, status: 'completed' })
-      .select('startTime').lean();
+      .select('startTime assignmentId').lean();
     const sessionDates = allSessions.map(s => new Date(s.startTime).toISOString().split('T')[0]);
     const streak = computeStreak(sessionDates);
     const totalSessions = allSessions.length;
+
+    // Build set of assignmentIds that have a completed session today
+    const completedTodayIds = new Set(
+      allSessions
+        .filter(s => new Date(s.startTime).toISOString().split('T')[0] === today)
+        .map(s => s.assignmentId?.toString())
+    );
 
     // Build calendar: counts per day for last 56 days (8 weeks)
     const dateCountMap = {};
@@ -61,6 +68,7 @@ export const getTodaysExercises = async (req, res) => {
         date: exercise.date,
         prescription: JSON.parse(exercise.prescription),
         completed: exercise.completed,
+        completedToday: completedTodayIds.has(exercise._id.toString()),
         performance: exercise.performance,
         doctor: exercise.doctorId && exercise.doctorId._id ? {
           id: exercise.doctorId._id.toString(),
@@ -81,3 +89,36 @@ export const getTodaysExercises = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
+export const getAssignment = async (req, res) => {
+  const patientId = req.user.id;
+  const { assignmentId } = req.params;
+
+  try {
+    const assignment = await findAssignmentById(assignmentId);
+    if (!assignment) return res.status(404).json({ message: 'Assignment not found' });
+
+    const assignmentPatientId = assignment.patientId._id ? assignment.patientId._id.toString() : assignment.patientId.toString();
+    if (assignmentPatientId !== patientId) return res.status(403).json({ message: 'Not authorized to access this assignment' });
+
+    return res.json({ assignment: {
+      id: assignment._id.toString(),
+      date: assignment.date,
+      endDate: assignment.endDate,
+      prescription: JSON.parse(assignment.prescription),
+      completed: assignment.completed,
+      totalSessions: assignment.totalSessions,
+      averagePerformance: assignment.averagePerformance,
+      exercise: assignment.exerciseId && assignment.exerciseId._id ? {
+        id: assignment.exerciseId._id.toString(),
+        name: assignment.exerciseId.name,
+        reps: assignment.exerciseId.reps,
+        duration: assignment.exerciseId.duration,
+        description: assignment.exerciseId.description
+      } : null
+    } });
+  } catch (error) {
+    console.error('Error in getAssignment:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+}

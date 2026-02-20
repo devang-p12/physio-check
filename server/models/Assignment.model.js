@@ -101,6 +101,14 @@ export const addSessionToAssignment = async (assignmentId, sessionId) => {
   );
 };
 
+export const markAssignmentCompleted = async (assignmentId) => {
+  return await Assignment.findByIdAndUpdate(
+    assignmentId,
+    { completed: true },
+    { new: true }
+  );
+};
+
 export const updateAssignmentStats = async (assignmentId, sessionAnalytics) => {
   const assignment = await Assignment.findById(assignmentId).populate('sessions');
   
