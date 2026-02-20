@@ -14,9 +14,12 @@ import PatientDashboard from "./pages/PatientDashboard";
 import ExerciseSession from "./pages/PatientExercise-Id";
 import AddPatient from "./pages/AddPatient";
 import DoctorCalendar from "./pages/DoctorCalendar";
-import DoctorList from "./pages/DoctorList"; 
-import PatientBooking from "./pages/PatientBooking"; // Ensure this is imported
+import DoctorList from "./pages/DoctorList";
+import PatientBooking from "./pages/PatientBooking";
 import ProtectedRoute from "./components/ProtectedRoute";
+import DoctorTodaysAssignments from "./pages/DoctorTodaysAssignments";
+import SessionPage from "./pages/SessionPage";
+import ChatbotPage from "./pages/Chatbot";
 
 function App() {
   const token = localStorage.getItem("token");
@@ -58,30 +61,28 @@ function App() {
         <Route path="/doctor/assign" element={<ProtectedRoute role="doctor"><AssignExercise /></ProtectedRoute>} />
         <Route path="/doctor/add-patient" element={<ProtectedRoute role="doctor"><AddPatient /></ProtectedRoute>} />
         <Route path="/doctor/calendar" element={<ProtectedRoute role="doctor"><DoctorCalendar /></ProtectedRoute>} />
+        <Route path="/doctor/today" element={<ProtectedRoute role="doctor"><DoctorTodaysAssignments /></ProtectedRoute>} />
 
         {/* ========================= */}
         {/* PATIENT ROUTES */}
         {/* ========================= */}
         <Route path="/patient" element={<ProtectedRoute role="patient"><PatientDashboard /></ProtectedRoute>} />
         <Route path="/patient/session" element={<ProtectedRoute role="patient"><ExerciseSession /></ProtectedRoute>} />
+        <Route path="/patient/doctors" element={<ProtectedRoute role="patient"><DoctorList /></ProtectedRoute>} />
+        <Route path="/patient/book/:doctorId" element={<ProtectedRoute role="patient"><PatientBooking /></ProtectedRoute>} />
+        <Route path="/patient/chatbot" element={<ProtectedRoute role="patient"><ChatbotPage /></ProtectedRoute>} />
 
-        {/* 1. Browse Doctors List */}
+        {/* ========================= */}
+        {/* SHARED LIVE SESSION ROUTE */}
+        {/* ========================= */}
         <Route
-          path="/patient/doctors"
+          path="/session/:id"
           element={
-            <ProtectedRoute role="patient">
-              <DoctorList />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* 2. Patient Booking (Slot Selection) - FIXED element here */}
-        <Route
-          path="/patient/book/:doctorId"
-          element={
-            <ProtectedRoute role="patient">
-              <PatientBooking /> 
-            </ProtectedRoute>
+            token ? (
+              <SessionPage />
+            ) : (
+              <Navigate to="/login" />
+            )
           }
         />
 
