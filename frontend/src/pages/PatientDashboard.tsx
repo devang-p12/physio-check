@@ -10,6 +10,7 @@ import {
   LogOut,
   UserRoundSearch,
   ChevronRight,
+  MessageCircle,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
@@ -64,6 +65,12 @@ const PatientDashboard = () => {
           >
             Find a Doctor
           </button>
+          <button
+            onClick={() => navigate("/patient/chatbot")}
+            className="hidden md:block text-sm font-semibold text-slate-600 hover:text-teal-600 transition"
+          >
+            AI Assistant
+          </button>
         </div>
         <div className="flex items-center gap-4">
           <Bell size={20} className="text-slate-400" />
@@ -108,6 +115,23 @@ const PatientDashboard = () => {
             <div>
               <h3 className="font-bold text-slate-900">Find Physiotherapists</h3>
               <p className="text-xs text-slate-500">Book a session or find a new specialist</p>
+            </div>
+          </div>
+          <ChevronRight size={20} className="text-slate-300 group-hover:text-teal-600" />
+        </div>
+
+        {/* AI CHATBOT */}
+        <div
+          onClick={() => navigate("/patient/chatbot")}
+          className="bg-white border border-teal-100 rounded-2xl p-4 flex items-center justify-between cursor-pointer hover:bg-teal-50/50 transition shadow-sm group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-teal-100 rounded-xl flex items-center justify-center text-teal-600">
+              <MessageCircle size={24} />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-900">AI Health Assistant</h3>
+              <p className="text-xs text-slate-500">Ask about exercises, recovery tips & more</p>
             </div>
           </div>
           <ChevronRight size={20} className="text-slate-300 group-hover:text-teal-600" />
@@ -163,14 +187,11 @@ const PatientDashboard = () => {
                     ex.completed ? "opacity-55" : ""
                   }`}
                 >
-                  {/* Strikethrough line overlay */}
                   {ex.completed && (
                     <div className="absolute inset-0 flex items-center px-4 pointer-events-none">
                       <div className="w-full h-[1.5px] bg-slate-300 rounded-full" />
                     </div>
                   )}
-
-                  {/* Icon */}
                   <div
                     className={`w-14 h-14 rounded-xl flex items-center justify-center shrink-0 ${
                       ex.completed
@@ -180,8 +201,6 @@ const PatientDashboard = () => {
                   >
                     {ex.completed ? <CheckCircle2 size={24} /> : <Activity size={24} />}
                   </div>
-
-                  {/* Text */}
                   <div className="flex-1 min-w-0">
                     <h3
                       className={`font-bold text-lg leading-tight ${
@@ -204,8 +223,6 @@ const PatientDashboard = () => {
                       </span>
                     </div>
                   </div>
-
-                  {/* Action */}
                   {ex.completed ? (
                     <span className="shrink-0 text-xs font-semibold text-green-500 bg-green-50 px-3 py-1 rounded-full border border-green-100">
                       Done ✓

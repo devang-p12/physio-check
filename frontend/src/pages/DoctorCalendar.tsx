@@ -259,14 +259,14 @@ const DoctorCalendar = () => {
                           {canJoin && (
                             <div className="flex gap-2">
                               <button
-                                onClick={() => window.open(`/chat/${apt._id}`, '_blank')}
+                                onClick={() => window.open(`/session/${apt._id}`, '_blank')}
                                 title="Open Chat"
                                 className="flex items-center gap-1.5 bg-white border-2 border-indigo-200 text-indigo-600 px-3 py-2 rounded-xl text-[10px] font-black hover:bg-indigo-50 transition-all"
                               >
                                 <MessageCircle size={14} /> Chat
                               </button>
                               <button
-                                onClick={() => window.open(`/video-call/${apt._id}`, '_blank')}
+                                onClick={() => window.open(`/session/${apt._id}`, '_blank')}
                                 title="Join Video Call"
                                 className="flex items-center gap-1.5 bg-indigo-600 text-white px-3 py-2 rounded-xl text-[10px] font-black hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all animate-pulse"
                               >
