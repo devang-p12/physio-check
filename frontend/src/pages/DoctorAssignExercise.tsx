@@ -187,9 +187,12 @@ const AssignExercise = () => {
                 >
                   <div>
                     <div className="flex justify-between items-start mb-4">
-                      <div className="p-2.5 bg-teal-50 text-teal-600 rounded-xl group-hover:bg-teal-500 group-hover:text-white transition-colors">
-                        <Dumbbell size={22} />
+                      <div className={`p-2.5 rounded-xl transition-colors ${ex.name === 'Reaction Exercise' ? 'bg-purple-50 text-purple-600 group-hover:bg-purple-500 group-hover:text-white' : 'bg-teal-50 text-teal-600 group-hover:bg-teal-500 group-hover:text-white'}`}>
+                        {ex.name === 'Reaction Exercise' ? <span className="text-xl">🎯</span> : <Dumbbell size={22} />}
                       </div>
+                      {ex.name === 'Reaction Exercise' && (
+                        <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Camera</span>
+                      )}
                     </div>
                     <h3 className="font-bold text-slate-900 group-hover:text-teal-700 transition-colors">{ex.name}</h3>
                     <p className="text-sm text-slate-500 mt-1">

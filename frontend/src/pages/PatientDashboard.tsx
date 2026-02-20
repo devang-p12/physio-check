@@ -35,6 +35,11 @@ const PatientDashboard = () => {
     const name = localStorage.getItem("name");
     if (name) setPatientName(name);
     fetchTodayExercises();
+
+    // Re-fetch whenever the tab regains focus (e.g. returning from a session)
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchTodayExercises(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
 
   const handleLogout = () => {
@@ -56,7 +61,7 @@ const PatientDashboard = () => {
     setLoading(false);
   };
 
-  const completedCount = exercises.filter((e: any) => e.completed).length;
+  const completedCount = exercises.filter((e: any) => e.completedToday).length;
   const totalCount = exercises.length;
   const progressPct = totalCount === 0 ? 0 : Math.round((completedCount / totalCount) * 100);
   const circumference = 2 * Math.PI * 28;
@@ -266,11 +271,11 @@ const PatientDashboard = () => {
               return (
                 <div
                   key={ex.id}
-                  className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-all ${ex.completed ? "opacity-70" : "hover:shadow-md hover:border-teal-200"}`}
+                  className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-all hover:shadow-md hover:border-teal-200 ${ex.completedToday ? 'border-teal-200 bg-teal-50/30' : ''}`}
                 >
                   <div className="p-4 flex items-center gap-4">
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${ex.completed ? "bg-teal-50 text-teal-500" : "bg-slate-50 text-slate-400"}`}>
-                      {ex.completed ? <CheckCircle2 size={22} /> : <Dumbbell size={22} />}
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${ex.completedToday ? "bg-teal-50 text-teal-500" : "bg-slate-50 text-slate-400"}`}>
+                      {ex.completedToday ? <CheckCircle2 size={22} /> : <Dumbbell size={22} />}
                     </div>
 
                     <div className="flex-1 min-w-0">
@@ -294,16 +299,21 @@ const PatientDashboard = () => {
                       </div>
                     </div>
 
-                    {ex.completed ? (
-                      <span className="shrink-0 text-xs bg-teal-100 text-teal-700 font-bold px-2.5 py-1 rounded-full">Done</span>
-                    ) : (
+                    <div className="flex items-center gap-2 shrink-0">
+                      {ex.completedToday && (
+                        <span className="text-xs bg-teal-100 text-teal-700 font-bold px-2.5 py-1 rounded-full">Done</span>
+                      )}
                       <button
-                        className="shrink-0 w-11 h-11 rounded-full bg-teal-500 hover:bg-teal-600 text-white flex items-center justify-center shadow-md shadow-teal-200 transition-all active:scale-95"
-                        onClick={() => navigate(`/patient/session?id=${ex.id}&tolerance=${tolerance}`)}
+                        className="w-11 h-11 rounded-full bg-teal-500 hover:bg-teal-600 text-white flex items-center justify-center shadow-md shadow-teal-200 transition-all active:scale-95"
+                        onClick={() =>
+                          ex.exercise?.name === 'Reaction Exercise'
+                            ? navigate(`/patient/reaction-session?id=${ex.id}`)
+                            : navigate(`/patient/session?id=${ex.id}&tolerance=${tolerance}`)
+                        }
                       >
                         <Play size={18} fill="white" />
                       </button>
-                    )}
+                    </div>
                   </div>
                 </div>
               );

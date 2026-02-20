@@ -17,6 +17,7 @@ import PatientSessionHistory from "./pages/PatientSessionHistory";
 import SessionDetails from "./pages/SessionDetails";
 import DoctorPatientMonitoring from "./pages/DoctorPatientMonitoring";
 import PatientSettings from "./pages/PatientSettings";
+import PatientReactionExercise from "./pages/PatientReactionExercise";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 // Reads localStorage fresh every render — prevents stale-closure redirect loops
@@ -130,6 +131,15 @@ function App() {
           element={
             <ProtectedRoute role="patient">
               <ExerciseSession />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/patient/reaction-session"
+          element={
+            <ProtectedRoute role="patient">
+              <PatientReactionExercise />
             </ProtectedRoute>
           }
         />

@@ -12,6 +12,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { usePose } from "../hooks/usePose";
 import wsService from "../services/websocket.service";
 import { useGoogleFit } from "../hooks/useGoogleFit";
+import ReactionExercise from "../components/ReactionExercise";
 
 const ExerciseSession = () => {
   const navigate = useNavigate();
@@ -28,6 +29,9 @@ const ExerciseSession = () => {
   const [timer, setTimer] = useState(0);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [sessionEndTime, setSessionEndTime] = useState<Date | null>(null);
+  const [assignment, setAssignment] = useState<any | null>(null);
+  const [reactionHits, setReactionHits] = useState(0);
+  const [reactionTimeLeft, setReactionTimeLeft] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -112,10 +116,33 @@ const ExerciseSession = () => {
   };
 
   /* ---------------- POSE HOOK ---------------- */
+  const isReaction = assignment?.exercise?.name === 'Reaction Exercise';
+
+  useEffect(() => {
+    if (!assignmentId) return;
+    const fetchAssignment = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch(`http://localhost:5000/patient/assignment/${assignmentId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setAssignment(data.assignment);
+        } else {
+          console.warn('Failed to fetch assignment', await res.text());
+        }
+      } catch (err) {
+        console.error('Error fetching assignment:', err);
+      }
+    };
+    fetchAssignment();
+  }, [assignmentId]);
+
   usePose({
     videoRef,
     canvasRef,
-    isActive,
+    isActive: isActive && !isReaction,
     tolerance,
     onRepUpdate: setReps,
     onPostureUpdate: setPostureStatus,
@@ -258,46 +285,62 @@ const ExerciseSession = () => {
         <div className="absolute inset-0 bg-gradient-to-b from-slate-900/50 to-slate-900/10 z-10" />
 
         {/* CAMERA */}
-        <video
-          ref={videoRef}
-          className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
-          playsInline
-          muted
-          autoPlay
-        />
+          {!isReaction ? (
+            <>
+              <video
+                ref={videoRef}
+                className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
+                playsInline
+                muted
+                autoPlay
+              />
 
-        {/* SKELETON CANVAS */}
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 w-full h-full object-cover scale-x-[-1] z-10 pointer-events-none"
-        />
+              {/* SKELETON CANVAS */}
+              <canvas
+                ref={canvasRef}
+                className="absolute inset-0 w-full h-full object-cover scale-x-[-1] z-10 pointer-events-none"
+              />
+            </>
+          ) : (
+            <div className="p-6">
+              <ReactionExercise
+                duration={assignment?.exercise?.duration ?? 30}
+                targets={assignment?.prescription?.repsPerSet ?? 10}
+                isActive={isActive}
+                onHitsChange={setReactionHits}
+                onTimeChange={setReactionTimeLeft}
+                onComplete={(score) => {
+                  console.log('Reaction exercise complete', score);
+                  setReactionHits(score.hits);
+                }}
+              />
+            </div>
+          )}
 
-        {/* Live Feedback Overlay */}
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20">
-          <div
-            className={`flex items-center gap-3 px-6 py-3 rounded-full backdrop-blur-md border shadow-2xl transition-colors duration-300 ${
-              postureStatus === "correct"
-                ? "bg-teal-500/20 border-teal-400/50 text-teal-300"
-                : "bg-red-500/20 border-red-400/50 text-red-300"
-            }`}
-          >
-            {postureStatus === "correct" ? (
-              <>
-                <CheckCircle2 size={24} fill="currentColor" />
-                <span className="font-bold tracking-wide">
-                  Posture Correct
-                </span>
-              </>
-            ) : (
-              <>
-                <AlertCircle size={24} fill="currentColor" />
-                <span className="font-bold tracking-wide">
-                  Straighten Back!
-                </span>
-              </>
-            )}
+        {/* Live Feedback Overlay - only for non-reaction exercises */}
+        {!isReaction && (
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20">
+            <div
+              className={`flex items-center gap-3 px-6 py-3 rounded-full backdrop-blur-md border shadow-2xl transition-colors duration-300 ${
+                postureStatus === "correct"
+                  ? "bg-teal-500/20 border-teal-400/50 text-teal-300"
+                  : "bg-red-500/20 border-red-400/50 text-red-300"
+              }`}
+            >
+              {postureStatus === "correct" ? (
+                <>
+                  <CheckCircle2 size={24} fill="currentColor" />
+                  <span className="font-bold tracking-wide">Posture Correct</span>
+                </>
+              ) : (
+                <>
+                  <AlertCircle size={24} fill="currentColor" />
+                  <span className="font-bold tracking-wide">Straighten Back!</span>
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
       </div>
 
@@ -307,9 +350,9 @@ const ExerciseSession = () => {
         <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50">
           <div>
             <span className="text-xs font-bold text-teal-600 uppercase tracking-wider mb-1 block">
-              Leg Strength
+              {assignment?.exercise?.description ? assignment.exercise.description.split(' ')[0] : 'Exercise'}
             </span>
-            <h1 className="text-2xl font-bold text-slate-900">Squats</h1>
+            <h1 className="text-2xl font-bold text-slate-900">{assignment?.exercise?.name ?? 'Exercise'}</h1>
           </div>
           <button
             onClick={() => navigate("/patient")}
@@ -323,24 +366,39 @@ const ExerciseSession = () => {
         <div className="flex-1 overflow-y-auto p-6 space-y-8">
           {/* Stats */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center">
-              <span className="text-xs text-slate-500 font-bold uppercase">
-                Reps
-              </span>
-              <div className="text-4xl font-bold text-slate-900 mt-1">
-                {reps}
-                <span className="text-sm text-slate-400 font-medium"> / 15</span>
-              </div>
-            </div>
-
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center">
-              <span className="text-xs text-slate-500 font-bold uppercase">
-                Duration
-              </span>
-              <div className="text-4xl font-bold text-slate-900 mt-1 tabular-nums">
-                {formatTime(timer)}
-              </div>
-            </div>
+            {isReaction ? (
+              <>
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center">
+                  <span className="text-xs text-slate-500 font-bold uppercase">Hits</span>
+                  <div className="text-4xl font-bold text-slate-900 mt-1">
+                    {reactionHits}
+                    <span className="text-sm text-slate-400 font-medium"> / {assignment?.prescription?.repsPerSet ?? 10}</span>
+                  </div>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center">
+                  <span className="text-xs text-slate-500 font-bold uppercase">Time Left</span>
+                  <div className="text-4xl font-bold text-slate-900 mt-1 tabular-nums">
+                    {reactionTimeLeft > 0 ? `${reactionTimeLeft}s` : `${assignment?.exercise?.duration ?? 30}s`}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center">
+                  <span className="text-xs text-slate-500 font-bold uppercase">Reps</span>
+                  <div className="text-4xl font-bold text-slate-900 mt-1">
+                    {reps}
+                    <span className="text-sm text-slate-400 font-medium"> / {assignment?.prescription?.repsPerSet ?? 15}</span>
+                  </div>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center">
+                  <span className="text-xs text-slate-500 font-bold uppercase">Duration</span>
+                  <div className="text-4xl font-bold text-slate-900 mt-1 tabular-nums">
+                    {formatTime(timer)}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Instructions */}
@@ -393,16 +451,18 @@ const ExerciseSession = () => {
               )}
             </div>
             <ul className="space-y-4">
-              {[
+              {(isReaction ? [
+                "Allow camera access when prompted.",
+                "Hold your hand up so the camera can see it clearly.",
+                "Point your index finger at the blue circles to hit them.",
+                "Try to hit all targets before the timer runs out!",
+              ] : [
                 "Stand with feet shoulder-width apart.",
                 "Keep your back straight and chest up.",
                 "Lower hips until thighs are parallel to floor.",
                 "Push through heels to return to start.",
-              ].map((step, idx) => (
-                <li
-                  key={idx}
-                  className="flex gap-3 text-sm text-slate-600 leading-relaxed"
-                >
+              ]).map((step, idx) => (
+                <li key={idx} className="flex gap-3 text-sm text-slate-600 leading-relaxed">
                   <span className="font-bold text-slate-300">{idx + 1}.</span>
                   {step}
                 </li>
@@ -414,7 +474,9 @@ const ExerciseSession = () => {
           <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
             <h4 className="font-bold text-blue-900 text-sm mb-2">💡 Pro Tip</h4>
             <p className="text-xs text-blue-700">
-              Ensure your knees don't go past your toes to avoid injury.
+              {isReaction
+                ? 'Keep your arm raised at a comfortable height. Move steadily — quick precise movements beat frantic waving!'
+                : "Ensure your knees don't go past your toes to avoid injury."}
             </p>
           </div>
         </div>

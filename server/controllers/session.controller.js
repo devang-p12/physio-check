@@ -22,13 +22,11 @@ export const startSession = async (req, res) => {
   const { assignmentId, googleFitSessionId } = req.body;
 
   try {
-    // Check if there's already an active session
+    // Check if there's already an active session — auto-complete it instead of erroring
     const existingSession = await getActiveSession(patientId);
     if (existingSession) {
-      return res.status(400).json({
-        message: 'You already have an active session. Please end it first.',
-        activeSession: existingSession
-      });
+      console.log(`Auto-completing stale active session ${existingSession._id} before starting new one`);
+      await endSession(existingSession._id.toString(), {});
     }
 
     // Verify assignment exists and belongs to patient
