@@ -19,6 +19,7 @@ import DoctorPatientMonitoring from "./pages/DoctorPatientMonitoring";
 import PatientSettings from "./pages/PatientSettings";
 import PatientReactionExercise from "./pages/PatientReactionExercise";
 import ProtectedRoute from "./components/ProtectedRoute";
+import PatientReport from "./pages/PatientReport";
 
 // Reads localStorage fresh every render — prevents stale-closure redirect loops
 const RootRedirect = () => {
@@ -103,6 +104,15 @@ function App() {
           element={
             <ProtectedRoute role="doctor">
               <SessionDetails />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/doctor/patient/:patientId/report"
+          element={
+            <ProtectedRoute role="doctor">
+              <PatientReport />
             </ProtectedRoute>
           }
         />

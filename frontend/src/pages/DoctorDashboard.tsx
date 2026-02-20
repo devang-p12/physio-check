@@ -12,6 +12,7 @@ import {
   Flame,
   Clock,
   Layers,
+  BarChart2,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
@@ -277,7 +278,7 @@ const DoctorDashboard = () => {
                     </div>
 
                     {/* Action buttons */}
-                    <div className="flex gap-3">
+                    <div className="flex gap-2">
                       <button
                         className="flex-[3] bg-teal-50 hover:bg-teal-100 text-teal-700 py-3 rounded-xl text-xs font-bold transition-colors"
                         onClick={() => navigate(`/doctor/assign?patientId=${patient.id}`)}
@@ -285,8 +286,15 @@ const DoctorDashboard = () => {
                         Assign Exercise
                       </button>
                       <button
+                        onClick={() => navigate(`/doctor/patient/${patient.id}/report`)}
+                        title="Generate Report"
+                        className="flex items-center justify-center gap-1 px-3 border border-teal-200 hover:bg-teal-50 text-teal-600 rounded-xl transition-all text-xs font-bold"
+                      >
+                        <BarChart2 size={15} />
+                      </button>
+                      <button
                         onClick={() => navigate(`/doctor/patient/${patient.id}`)}
-                        className="flex-1 flex items-center justify-center border border-slate-100 hover:bg-slate-50 text-slate-400 hover:text-slate-600 rounded-xl transition-all"
+                        className="flex items-center justify-center border border-slate-100 hover:bg-slate-50 text-slate-400 hover:text-slate-600 rounded-xl px-3 transition-all"
                       >
                         <ChevronRight size={18} />
                       </button>
