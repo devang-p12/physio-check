@@ -7,6 +7,7 @@ interface Props {
   videoRef: RefObject<HTMLVideoElement>
   canvasRef: RefObject<HTMLCanvasElement>
   isActive: boolean
+  tolerance?: number
   onRepUpdate: (reps: number) => void
   onPostureUpdate: (status: "correct" | "incorrect") => void
 }
@@ -15,6 +16,7 @@ export function usePose({
   videoRef,
   canvasRef,
   isActive,
+  tolerance = 0,
   onRepUpdate,
   onPostureUpdate
 }: Props) {
@@ -49,7 +51,7 @@ export function usePose({
 
       ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-      const { reps, posture } = processPose(results.poseLandmarks)
+      const { reps, posture } = processPose(results.poseLandmarks, tolerance)
 
       onRepUpdate(reps)
       onPostureUpdate(posture)

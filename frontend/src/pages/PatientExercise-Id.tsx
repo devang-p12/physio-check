@@ -17,6 +17,7 @@ const ExerciseSession = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const assignmentId = searchParams.get('id');
+  const tolerance = Number(searchParams.get('tolerance') ?? 0);
 
   const [isActive, setIsActive] = useState(false);
   const [sessionId, setSessionId] = useState(null);
@@ -115,6 +116,7 @@ const ExerciseSession = () => {
     videoRef,
     canvasRef,
     isActive,
+    tolerance,
     onRepUpdate: setReps,
     onPostureUpdate: setPostureStatus,
   });
@@ -142,7 +144,9 @@ const ExerciseSession = () => {
         setSessionId(data.session.id);
         setSessionMode(data.session.mode);
         setIsActive(true);
-        setSessionStartTime(new Date());
+        // Use server's recorded startTime so the Google Fit query window
+        // matches exactly what the server stored (avoids client/server clock drift)
+        setSessionStartTime(new Date(data.session.startTime));
         
         console.log('Session started:', data);
         console.log('Session mode set to:', data.session.mode);
@@ -198,8 +202,13 @@ const ExerciseSession = () => {
         if (smartwatchEnabled && sessionStartTime && sessionMode === 'tracked') {
           setTimeout(async () => {
             try {
+              // Add ±5 min buffer around the session window so that any
+              // Google Fit data synced slightly before/after is captured
+              const bufferMs = 5 * 60 * 1000;
+              const queryStart = new Date(sessionStartTime.getTime() - bufferMs);
+              const queryEnd   = new Date(endTime.getTime()   + bufferMs);
               const historyResponse = await fetch(
-                `http://localhost:5000/google-fit/history?startTime=${sessionStartTime.toISOString()}&endTime=${endTime.toISOString()}`,
+                `http://localhost:5000/google-fit/history?startTime=${queryStart.toISOString()}&endTime=${queryEnd.toISOString()}`,
                 {
                   headers: {
                     'Authorization': `Bearer ${token}`

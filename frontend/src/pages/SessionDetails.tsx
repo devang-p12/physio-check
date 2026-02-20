@@ -30,7 +30,10 @@ const SessionDetails = () => {
         
         // If session has timestamps and was tracked mode, fetch Google Fit data
         if (data.session?.startTime && data.session?.endTime) {
-          fetchGoogleFitData(data.session.startTime, data.session.endTime);
+          // try doctor endpoint first (if viewing as doctor), else fallback to patient endpoint
+          // attempt to extract patientId from returned session
+          const patientId = data.session?.patientId?._id || data.session?.patientId || data.session?.assignmentId?.patientId?._id || data.session?.assignmentId?.patientId;
+          fetchGoogleFitData(data.session.startTime, data.session.endTime, patientId);
         }
       }
     } catch (error) {
@@ -40,14 +43,34 @@ const SessionDetails = () => {
     }
   };
 
-  const fetchGoogleFitData = async (startTime: string, endTime: string) => {
+  const fetchGoogleFitData = async (startTime: string, endTime: string, patientId?: string) => {
     setLoadingFitData(true);
     try {
       const token = localStorage.getItem('token');
       // Expand time window: subtract 30 minutes from start, add 30 minutes to end
       const adjustedStart = new Date(new Date(startTime).getTime() - 30 * 60 * 1000).toISOString();
       const adjustedEnd = new Date(new Date(endTime).getTime() + 30 * 60 * 1000).toISOString();
-      
+
+      // If we have a patientId, try the doctor endpoint first
+      if (patientId) {
+        try {
+          const doctorRes = await fetch(`http://localhost:5000/doctor/patient/${patientId}/google-fit?startTime=${adjustedStart}&endTime=${adjustedEnd}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (doctorRes.ok) {
+            const data = await doctorRes.json();
+            setGoogleFitData(data);
+            console.log('Google Fit (doctor) data fetched:', data);
+            return;
+          }
+          // if forbidden or other error, fall through to patient endpoint
+          console.warn('Doctor google-fit fetch failed, falling back to patient endpoint:', doctorRes.status);
+        } catch (err) {
+          console.warn('Error calling doctor google-fit endpoint, falling back:', err);
+        }
+      }
+
+      // Fallback: call the patient-only endpoint
       const response = await fetch(
         `http://localhost:5000/google-fit/history?startTime=${adjustedStart}&endTime=${adjustedEnd}`,
         {
@@ -60,9 +83,9 @@ const SessionDetails = () => {
       if (response.ok) {
         const data = await response.json();
         setGoogleFitData(data);
-        console.log('Google Fit data fetched:', data);
+        console.log('Google Fit (patient) data fetched:', data);
       } else {
-        console.log('Google Fit data not available');
+        console.log('Google Fit data not available (patient endpoint)');
       }
     } catch (error) {
       console.error('Error fetching Google Fit data:', error);

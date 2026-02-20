@@ -294,7 +294,8 @@ export const getSessionAnalytics = async (req, res) => {
       ? session.patientId._id.toString() 
       : session.patientId.toString();
 
-    if (sessionPatientId !== patientId) {
+    // Patients can only see their own sessions; doctors can see any session
+    if (req.user.role !== 'doctor' && sessionPatientId !== patientId) {
       console.log(`Authorization failed for analytics: session.patientId=${sessionPatientId}, requestPatientId=${patientId}`);
       return res.status(403).json({ 
         message: 'Not authorized to access this session' 

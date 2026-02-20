@@ -76,7 +76,7 @@ const AssignExercise = () => {
     if (!selectedExercises.find((e) => e._id === exercise._id)) {
       setSelectedExercises([
         ...selectedExercises,
-        { ...exercise, sets: 3, reps: exercise.reps || 10 },
+        { ...exercise, sets: 3, reps: exercise.reps || 10, tolerance: 0 },
       ]);
     }
   };
@@ -110,8 +110,9 @@ const AssignExercise = () => {
           body: JSON.stringify({
             patientId,
             exerciseId: ex._id,
-            prescription: { sets: ex.sets, repsPerSet: ex.reps },
+            prescription: { sets: ex.sets, repsPerSet: ex.reps, tolerance: ex.tolerance },
             date: startDate,
+            endDate: endDate,
           }),
         });
       }
@@ -289,6 +290,33 @@ const AssignExercise = () => {
                               onChange={(e) => updateField(ex._id, "reps", e.target.value)}
                               className="w-full border-transparent bg-white px-3 py-1.5 rounded-lg text-sm focus:ring-2 focus:ring-teal-500/20 border outline-none font-medium"
                             />
+                          </div>
+                        </div>
+
+                        {/* TOLERANCE SLIDER */}
+                        <div className="mt-3">
+                          <div className="flex justify-between items-center mb-1">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Angle Tolerance</label>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                              ex.tolerance === 0
+                                ? "bg-slate-100 text-slate-500"
+                                : ex.tolerance <= 10
+                                ? "bg-yellow-50 text-yellow-600"
+                                : "bg-orange-50 text-orange-600"
+                            }`}>{ex.tolerance}°</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={30}
+                            step={5}
+                            value={ex.tolerance}
+                            onChange={(e) => updateField(ex._id, "tolerance", e.target.value)}
+                            className="w-full h-1.5 rounded-full appearance-none bg-slate-200 accent-teal-500 cursor-pointer"
+                          />
+                          <div className="flex justify-between text-[9px] text-slate-400 mt-0.5">
+                            <span>Strict</span>
+                            <span>Lenient</span>
                           </div>
                         </div>
                       </div>

@@ -45,6 +45,9 @@ export const login = async (req, res) => {
       expiresIn: "1d",
     });
 
+    // Track last online
+    await user.updateOne({ lastOnline: new Date() });
+
     res.json({
       token,
       user: {

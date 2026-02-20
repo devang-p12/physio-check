@@ -185,6 +185,33 @@ const PatientSettings: React.FC = () => {
     handleConnectGoogleFit();
   };
 
+  const handleDisconnectGoogleFit = async () => {
+    try {
+      setRefreshing(true);
+      const response = await fetch('http://localhost:5000/google-fit/disconnect', {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (response.ok) {
+        setSuccessMessage('Google Fit disconnected');
+        setTimeout(() => setSuccessMessage(null), 3000);
+      } else {
+        const data = await response.json();
+        console.error('Disconnect failed:', data);
+        alert(data.message || 'Failed to disconnect Google Fit');
+      }
+    } catch (err) {
+      console.error('Error disconnecting Google Fit:', err);
+      alert('Failed to disconnect Google Fit');
+    } finally {
+      setRefreshing(false);
+      fetchSettings();
+    }
+  };
+
   const closeModal = () => {
     setErrorModal({ show: false, type: null, message: '' });
   };
@@ -278,6 +305,15 @@ const PatientSettings: React.FC = () => {
             >
               <RefreshCw className="mr-2" />
               Refresh Connection
+            </button>
+          )}
+          {googleFitStatus.connected && (
+            <button
+              onClick={handleDisconnectGoogleFit}
+              disabled={refreshing}
+              className="mt-3 w-full px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+            >
+              Disconnect Google Fit
             </button>
           )}
         </div>

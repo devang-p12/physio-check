@@ -20,6 +20,9 @@ const assignmentSchema = new mongoose.Schema({
     type: Date,
     required: true
   },
+  endDate: {
+    type: Date
+  },
   prescription: {
     type: String,
     required: true

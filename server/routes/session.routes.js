@@ -23,7 +23,7 @@ router.get('/active', auth, patientOnly, getActive);
 // Get session history
 router.get('/history', auth, patientOnly, getSessionHistory);
 
-// Get session analytics
-router.get('/:sessionId/analytics', auth, patientOnly, getSessionAnalytics);
+// Get session analytics — accessible by both patient (own session) and doctor
+router.get('/:sessionId/analytics', auth, getSessionAnalytics);
 
 export default router;

@@ -3,14 +3,14 @@ import { findExerciseById } from "../models/Exercise.model.js";
 import { createAssignment } from "../models/Assignment.model.js";
 
 export const assignExercise = async (req, res) => {
-  const { patientId, exerciseId, date, prescription } = req.body;
+  const { patientId, exerciseId, date, endDate, prescription } = req.body;
 
   if (!patientId || !exerciseId || !date || !prescription) {
     return res.status(400).json({ message: "missing required fields" });
   }
 
   try {
-    const { sets, repsPerSet } = prescription;
+    const { sets, repsPerSet, tolerance } = prescription;
 
     if (
       !Number.isInteger(sets) ||
@@ -21,6 +21,12 @@ export const assignExercise = async (req, res) => {
       return res.status(400).json({
         message: "invalid prescription! sets and reps must be a positive integer",
       });
+    }
+
+    // tolerance is optional — clamp to 0..30
+    const tol = typeof tolerance === 'number' ? tolerance : Number(tolerance);
+    if (Number.isNaN(tol) || tol < 0 || tol > 30) {
+      return res.status(400).json({ message: "invalid tolerance; must be a number between 0 and 30" });
     }
 
     const patient = await findUserById(patientId);
@@ -38,7 +44,8 @@ export const assignExercise = async (req, res) => {
       patientId,
       exerciseId,
       date: new Date(date),
-      prescription: JSON.stringify(prescription),
+      endDate: endDate ? new Date(endDate) : undefined,
+      prescription: JSON.stringify({ sets, repsPerSet, tolerance: tol ?? 0 }),
     });
 
     res.status(201).json({
