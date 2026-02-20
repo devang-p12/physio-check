@@ -13,6 +13,7 @@ import {
   Clock,
   Layers,
   BarChart2,
+  CalendarDays,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
@@ -151,13 +152,22 @@ const DoctorDashboard = () => {
             </p>
           </div>
 
-          <button
-            onClick={() => navigate("/doctor/add-patient")}
-            className="flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-xl shadow-slate-200 active:scale-95"
-          >
-            <UserPlus size={18} />
-            Add New Patient
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate("/doctor/calendar")}
+              className="flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-xl shadow-teal-100 active:scale-95"
+            >
+              <CalendarDays size={18} />
+              View Calendar
+            </button>
+            <button
+              onClick={() => navigate("/doctor/add-patient")}
+              className="flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-xl shadow-slate-200 active:scale-95"
+            >
+              <UserPlus size={18} />
+              Add New Patient
+            </button>
+          </div>
         </div>
 
         {/* STATS */}

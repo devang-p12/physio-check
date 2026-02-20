@@ -122,3 +122,28 @@ export const getAssignment = async (req, res) => {
     return res.status(500).json({ message: 'Internal server error' });
   }
 }
+
+export const getAssignmentDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log("🔍 Searching for Assignment ID:", id);
+
+    const assignment = await findAssignmentById(id);
+
+    if (!assignment) {
+      console.log("❌ NOT FOUND: No assignment exists with that ID.");
+      return res.status(404).json({ message: "Assignment not found in database" });
+    }
+
+    console.log("✅ FOUND: Assignment exists. Now populating exercise...");
+    const populated = await assignment.populate("exerciseId");
+    
+    res.json({
+      exercise: populated.exerciseId,
+      prescription: populated.prescription
+    });
+  } catch (error) {
+    console.error("🔥 DATABASE CRASH:", error.message);
+    res.status(500).json({ message: "Server error during DB query" });
+  }
+};

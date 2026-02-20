@@ -7,6 +7,7 @@ import patientRoutes from "./routes/patient.routes.js";
 import sessionRoutes from "./routes/session.routes.js";
 import googleFitRoutes from "./routes/googleFit.routes.js";
 import settingsRoutes from "./routes/settings.routes.js";
+import appointmentRoutes from "./routes/appointment.routes.js";
 import { connectDB } from "./data/db.js";
 import { initializeWebSocket } from "./services/websocket.service.js";
 
@@ -40,6 +41,8 @@ app.use("/session", sessionRoutes);
 app.use("/google-fit", googleFitRoutes);
 
 app.use("/settings", settingsRoutes);
+
+app.use("/appointment", appointmentRoutes);
 
 // 404 LAST
 app.use((req, res) => {

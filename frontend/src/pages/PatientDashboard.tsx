@@ -11,6 +11,9 @@ import {
   Dumbbell,
   TrendingUp,
   ChevronRight,
+  Bell,
+  UserRoundSearch,
+  MessageCircle,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
@@ -75,6 +78,18 @@ const PatientDashboard = () => {
             <Activity size={20} strokeWidth={2.5} />
           </div>
           <span className="font-bold text-slate-900">PhysioCheck</span>
+          <button
+            onClick={() => navigate("/patient/doctors")}
+            className="hidden md:flex items-center gap-1.5 ml-4 px-3 py-2 text-sm font-medium text-slate-600 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition"
+          >
+            <UserRoundSearch size={15} /> Find a Doctor
+          </button>
+          <button
+            onClick={() => navigate("/patient/chatbot")}
+            className="hidden md:flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition"
+          >
+            <MessageCircle size={15} /> AI Assistant
+          </button>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -88,6 +103,9 @@ const PatientDashboard = () => {
             className="p-2 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition"
           >
             <Settings size={20} />
+          </button>
+          <button className="p-2 text-slate-400 hover:text-slate-600 transition">
+            <Bell size={20} />
           </button>
           <img
             src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${patientName}`}

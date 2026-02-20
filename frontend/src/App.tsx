@@ -20,6 +20,12 @@ import PatientSettings from "./pages/PatientSettings";
 import PatientReactionExercise from "./pages/PatientReactionExercise";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PatientReport from "./pages/PatientReport";
+import DoctorCalendar from "./pages/DoctorCalendar";
+import DoctorList from "./pages/DoctorList";
+import PatientBooking from "./pages/PatientBooking";
+import ChatbotPage from "./pages/Chatbot";
+import DoctorTodaysAssignments from "./pages/DoctorTodaysAssignments";
+import SessionPage from "./pages/SessionPage";
 
 // Reads localStorage fresh every render — prevents stale-closure redirect loops
 const RootRedirect = () => {
@@ -117,6 +123,24 @@ function App() {
           }
         />
 
+        <Route
+          path="/doctor/calendar"
+          element={
+            <ProtectedRoute role="doctor">
+              <DoctorCalendar />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/doctor/today"
+          element={
+            <ProtectedRoute role="doctor">
+              <DoctorTodaysAssignments />
+            </ProtectedRoute>
+          }
+        />
+
         {/* PATIENT ROUTES */}
         <Route
           path="/patient"
@@ -168,6 +192,42 @@ function App() {
           element={
             <ProtectedRoute role="patient">
               <PatientSettings />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/patient/doctors"
+          element={
+            <ProtectedRoute role="patient">
+              <DoctorList />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/patient/book/:doctorId"
+          element={
+            <ProtectedRoute role="patient">
+              <PatientBooking />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/patient/chatbot"
+          element={
+            <ProtectedRoute role="patient">
+              <ChatbotPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/session/:id"
+          element={
+            <ProtectedRoute>
+              <SessionPage />
             </ProtectedRoute>
           }
         />
