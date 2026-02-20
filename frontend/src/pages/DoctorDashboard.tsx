@@ -9,7 +9,8 @@ import {
   ChevronRight,
   TrendingUp,
   MoreHorizontal,
-  CalendarDays // Added for the new button
+  CalendarDays,
+  PlusCircle, // ← new
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
@@ -94,13 +95,21 @@ const DoctorDashboard = () => {
           </div>
 
           <div className="flex items-center gap-6">
-            {/* Added Calendar Link in Navbar for quick access */}
-            <button 
+            <button
               onClick={() => navigate("/doctor/calendar")}
               className="hidden sm:flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-teal-600 transition-colors"
             >
               <Calendar size={18} />
               Schedule
+            </button>
+
+            {/* ── Create Exercise navbar link ── */}
+            <button
+              onClick={() => navigate("/doctor/create-exercise")}
+              className="hidden sm:flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-teal-600 transition-colors"
+            >
+              <PlusCircle size={18} />
+              Create Exercise
             </button>
 
             <button className="relative p-2 text-slate-400 hover:bg-slate-50 rounded-full transition-colors">
@@ -118,7 +127,7 @@ const DoctorDashboard = () => {
                 alt="Doctor"
                 className="w-10 h-10 rounded-xl border-2 border-white shadow-sm"
               />
-              <button 
+              <button
                 onClick={handleLogout}
                 className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
                 title="Logout"
@@ -139,14 +148,23 @@ const DoctorDashboard = () => {
             <p className="text-slate-500 font-medium">Monitoring {patients.length} active recovery tracks</p>
           </div>
 
-          {/* Replaced Add Patient with View Calendar */}
-          <button
-            onClick={() => navigate("/doctor/calendar")}
-            className="flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-xl shadow-teal-100 active:scale-95"
-          >
-            <CalendarDays size={18} />
-            View Calendar
-          </button>
+          {/* ── Header action buttons ── */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate("/doctor/create-exercise")}
+              className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-5 py-3 rounded-xl font-bold transition-all shadow-sm active:scale-95"
+            >
+              <PlusCircle size={18} className="text-teal-500" />
+              Create Exercise
+            </button>
+            <button
+              onClick={() => navigate("/doctor/calendar")}
+              className="flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-xl shadow-teal-100 active:scale-95"
+            >
+              <CalendarDays size={18} />
+              View Calendar
+            </button>
+          </div>
         </div>
 
         {/* STATS */}
@@ -176,7 +194,7 @@ const DoctorDashboard = () => {
               {filteredPatients.length}
             </span>
           </div>
-          
+
           <div className="relative w-full sm:w-72">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input
@@ -188,7 +206,7 @@ const DoctorDashboard = () => {
           </div>
         </div>
 
-        {/* PATIENT GRID (The rest remains logic-intact) */}
+        {/* PATIENT GRID */}
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 space-y-4">
             <div className="w-10 h-10 border-4 border-teal-500/20 border-t-teal-500 rounded-full animate-spin"></div>
@@ -209,7 +227,6 @@ const DoctorDashboard = () => {
                 key={patient.id}
                 className="group bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 overflow-hidden"
               >
-                {/* ... (Existing patient card content) */}
                 <div className="p-6">
                   <div className="flex justify-between items-start mb-4">
                     <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 font-bold text-xl group-hover:bg-teal-50 group-hover:text-teal-600 transition-colors">
@@ -243,9 +260,9 @@ const DoctorDashboard = () => {
                     >
                       Assign Exercise
                     </button>
-                    <button 
-                       onClick={() => navigate(`/doctor/patient/${patient.id}`)}
-                       className="flex-1 flex items-center justify-center border border-slate-100 hover:bg-slate-50 text-slate-400 hover:text-slate-600 rounded-xl transition-all"
+                    <button
+                      onClick={() => navigate(`/doctor/patient/${patient.id}`)}
+                      className="flex-1 flex items-center justify-center border border-slate-100 hover:bg-slate-50 text-slate-400 hover:text-slate-600 rounded-xl transition-all"
                     >
                       <ChevronRight size={18} />
                     </button>
@@ -254,7 +271,7 @@ const DoctorDashboard = () => {
 
                 <div className="px-6 py-4 bg-slate-50/50 border-t border-slate-50 flex justify-between items-center">
                   <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-slate-400 tracking-tight">
-                    <div className={`w-1.5 h-1.5 rounded-full ${patient.status === 'On Track' ? 'bg-emerald-500' : 'bg-amber-500'}`}></div>
+                    <div className={`w-1.5 h-1.5 rounded-full ${patient.status === "On Track" ? "bg-emerald-500" : "bg-amber-500"}`}></div>
                     {patient.status}
                   </span>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">
