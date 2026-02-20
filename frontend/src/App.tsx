@@ -19,49 +19,44 @@ import DoctorPatientMonitoring from "./pages/DoctorPatientMonitoring";
 import PatientSettings from "./pages/PatientSettings";
 import ProtectedRoute from "./components/ProtectedRoute";
 
-function App() {
+// Reads localStorage fresh every render — prevents stale-closure redirect loops
+const RootRedirect = () => {
   const token = localStorage.getItem("token");
   const role = localStorage.getItem("role");
+  if (!token) return <Navigate to="/login" replace />;
+  return <Navigate to={role === "doctor" ? "/doctor" : "/patient"} replace />;
+};
 
+const GuestRoute = ({ children }: { children: React.ReactNode }) => {
+  const token = localStorage.getItem("token");
+  const role = localStorage.getItem("role");
+  if (token) return <Navigate to={role === "doctor" ? "/doctor" : "/patient"} replace />;
+  return <>{children}</>;
+};
+
+function App() {
   return (
     <Router>
       <Routes>
         {/* ROOT */}
-        <Route
-          path="/"
-          element={
-            token ? (
-              role === "doctor" ? (
-                <Navigate to="/doctor" />
-              ) : (
-                <Navigate to="/patient" />
-              )
-            ) : (
-              <Navigate to="/login" />
-            )
-          }
-        />
+        <Route path="/" element={<RootRedirect />} />
 
         {/* AUTH ROUTES */}
         <Route
           path="/login"
           element={
-            token ? (
-              <Navigate to={role === "doctor" ? "/doctor" : "/patient"} />
-            ) : (
+            <GuestRoute>
               <LoginPage />
-            )
+            </GuestRoute>
           }
         />
 
         <Route
           path="/register"
           element={
-            token ? (
-              <Navigate to={role === "doctor" ? "/doctor" : "/patient"} />
-            ) : (
+            <GuestRoute>
               <RegisterPage />
-            )
+            </GuestRoute>
           }
         />
 

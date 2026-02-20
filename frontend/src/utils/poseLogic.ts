@@ -8,19 +8,26 @@ export function resetPoseState() {
   state = "UP"
 }
 
-export function processPose(landmarks: Landmark[]) {
+// tolerance: 0–30 degrees added by doctor to widen thresholds for injured patients
+// e.g. tolerance=20 → DOWN triggers at <110° instead of <90°, UP triggers at >140° instead of >160°
+export function processPose(landmarks: Landmark[], tolerance: number = 0) {
+  const clampedTolerance = Math.max(0, Math.min(30, tolerance))
+
   const hip = landmarks[23]
   const knee = landmarks[25]
   const ankle = landmarks[27]
 
   const angle = calculateAngle(hip, knee, ankle)
 
-  // Rep logic
-  if (angle < 90 && state === "UP") {
+  const downThreshold = 90 + clampedTolerance
+  const upThreshold = 160 - clampedTolerance
+
+  // Rep logic — thresholds widened by tolerance for recovering patients
+  if (angle < downThreshold && state === "UP") {
     state = "DOWN"
   }
 
-  if (angle > 160 && state === "DOWN") {
+  if (angle > upThreshold && state === "DOWN") {
     reps++
     state = "UP"
   }

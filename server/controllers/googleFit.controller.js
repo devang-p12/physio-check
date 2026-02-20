@@ -254,13 +254,25 @@ export const getGoogleFitHistory = async (req, res) => {
       });
     }
 
+    // Debug: log stored token info (do NOT log in production with real tokens)
+    try {
+      console.log('Google Fit stored token info for user', userId, {
+        hasAccessToken: !!user.googleFit.accessToken,
+        hasRefreshToken: !!user.googleFit.refreshToken,
+        expiresAt: user.googleFit.expiresAt
+      });
+    } catch (e) {
+      console.log('Failed to log stored token info', e);
+    }
+
     // Check if token is expired and refresh if needed
     if (user.googleFit.expiresAt && new Date(user.googleFit.expiresAt) <= new Date()) {
       if (!user.googleFit.refreshToken) {
         return res.status(401).json({ message: 'Token expired and no refresh token available' });
       }
-      
+      console.log('Access token expired; attempting refresh for user', userId);
       const newTokens = await refreshAccessToken(user.googleFit.refreshToken);
+      console.log('Refresh result received for user', userId, { accessTokenPresent: !!newTokens.accessToken, expiresIn: newTokens.expiresIn });
       await updateUser(userId, {
         'googleFit.accessToken': newTokens.accessToken,
         'googleFit.expiresAt': new Date(Date.now() + newTokens.expiresIn * 1000)

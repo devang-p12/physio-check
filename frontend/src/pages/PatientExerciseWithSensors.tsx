@@ -95,7 +95,8 @@ const ExerciseSessionWithSensors = () => {
         setSessionId(data.session.id);
         setSessionMode(data.session.mode);
         setIsActive(true);
-        setSessionStartTime(new Date());
+        // Use server's recorded startTime to avoid client/server clock drift
+        setSessionStartTime(new Date(data.session.startTime));
         
         // Show warning if in manual mode
         if (data.warnings && data.warnings.length > 0) {

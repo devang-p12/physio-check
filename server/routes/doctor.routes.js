@@ -11,6 +11,7 @@ import {
   getPatientPerformanceSummary,
   getAssignmentSessions 
 } from "../controllers/doctorSession.controller.js";
+import { getPatientGoogleFit } from "../controllers/doctorSession.controller.js";
 
 
 const router = express.Router();
@@ -26,5 +27,6 @@ router.get("/patient-sessions", auth, doctorOnly, getDoctorPatientSessions);
 router.get("/session/:sessionId", auth, doctorOnly, getSessionDetails);
 router.get("/patient/:patientId/performance", auth, doctorOnly, getPatientPerformanceSummary);
 router.get("/assignment/:assignmentId/sessions", auth, doctorOnly, getAssignmentSessions);
+router.get('/patient/:patientId/google-fit', auth, doctorOnly, getPatientGoogleFit);
 
 export default router;

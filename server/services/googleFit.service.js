@@ -91,11 +91,22 @@ export const refreshAccessToken = async (refreshToken) => {
       body: params
     });
 
-    const data = await response.json();
-    return {
-      accessToken: data.access_token,
-      expiresIn: data.expires_in
-    };
+    console.log(`Refresh token endpoint response: ${response.status} ${response.statusText}`);
+    const text = await response.text();
+    try {
+      const data = JSON.parse(text);
+      console.log('Refresh token response body:', JSON.stringify(data, null, 2));
+      if (!response.ok) {
+        throw new Error(`Refresh token failed: ${response.status} ${response.statusText}`);
+      }
+      return {
+        accessToken: data.access_token,
+        expiresIn: data.expires_in
+      };
+    } catch (parseErr) {
+      console.error('Failed to parse refresh token response:', text);
+      throw new Error('Failed to refresh access token');
+    }
   } catch (error) {
     console.error('Error refreshing token:', error);
     throw error;
@@ -103,70 +114,70 @@ export const refreshAccessToken = async (refreshToken) => {
 };
 
 /**
- * Fetch fitness data from Google Fit
+ * Fetch fitness data from Google Fit using the Aggregate API.
+ * This queries ALL data sources for a given data type, which is far more
+ * reliable than querying a single data source stream.
  */
-export const fetchFitnessData = async (accessToken, dataTypeKey, startTime, endTime) => {
+export const fetchFitnessData = async (accessToken, dataTypeKey, startTimeMs, endTimeMs) => {
   const dataType = DATA_TYPES[dataTypeKey];
 
-  console.log(`Fetching ${dataTypeKey} (${dataType}) from ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`);
+  console.log(`Fetching ${dataTypeKey} (${dataType}) via aggregate API`);
+  console.log(`Time range: ${new Date(startTimeMs).toISOString()} → ${new Date(endTimeMs).toISOString()}`);
 
+  // Use a single bucket spanning the full range so we get one aggregated result
+  const body = {
+    aggregateBy: [{ dataTypeName: dataType }],
+    bucketByTime: { durationMillis: endTimeMs - startTimeMs },
+    startTimeMillis: startTimeMs,
+    endTimeMillis: endTimeMs,
+  };
+
+  const response = await fetch('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  // Log status and headers for debugging
   try {
-    // First, get all available data sources
-    const sourcesResponse = await fetch('https://www.googleapis.com/fitness/v1/users/me/dataSources', {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-      }
-    });
-
-    if (!sourcesResponse.ok) {
-      throw new Error(`Failed to get data sources: ${sourcesResponse.statusText}`);
-    }
-
-    const sourcesData = await sourcesResponse.json();
-    console.log(`Found ${sourcesData.dataSource?.length || 0} total data sources`);
-
-    // Find data sources that match our data type
-    const matchingSources = sourcesData.dataSource?.filter(ds =>
-      ds.dataType?.name === dataType
-    ) || [];
-
-    console.log(`Found ${matchingSources.length} sources matching ${dataType}:`,
-      matchingSources.map(ds => ({ id: ds.dataStreamId, name: ds.dataType?.name })));
-
-    if (matchingSources.length === 0) {
-      console.log(`No data sources found for ${dataType}, returning empty data`);
-      return { point: [] };
-    }
-
-    // Try to fetch data from the first matching source
-    const dataSource = matchingSources[0];
-    const dataEndpoint = `https://www.googleapis.com/fitness/v1/users/me/dataSources/${dataSource.dataStreamId}/datasets/${startTime}000000-${endTime}000000`;
-
-    console.log(`Fetching from data source: ${dataSource.dataStreamId}`);
-
-    const response = await fetch(dataEndpoint, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-      }
-    });
-
-    console.log(`Response status for ${dataTypeKey}:`, response.status);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.log(`Error response for ${dataTypeKey}:`, errorText);
-      throw new Error(`Fitness data fetch failed: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    console.log(`Raw API response for ${dataTypeKey}:`, JSON.stringify(data, null, 2));
-    return data;
-  } catch (error) {
-    console.error(`Error fetching ${dataTypeKey}:`, error);
-    throw error;
+    console.log(`Google Fit aggregate API response status: ${response.status} ${response.statusText}`);
+    const headersObj = {};
+    response.headers.forEach((v, k) => { headersObj[k] = v; });
+    console.log(`Google Fit aggregate API response headers:`, headersObj);
+  } catch (hdrErr) {
+    console.log('Failed to read response headers', hdrErr);
   }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`Aggregate API error for ${dataTypeKey}:`, errorText);
+    throw new Error(`Aggregate API failed: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  // Log the full JSON response for debugging (trim if very large)
+  try {
+    console.log(`Aggregate response for ${dataTypeKey}:`, JSON.stringify(data, null, 2));
+  } catch (logErr) {
+    console.log('Could not stringify aggregate response', logErr);
+  }
+
+  // Flatten all data points from all buckets into a single { point: [...] } shape
+  // so parseGoogleFitData can work unchanged
+  const allPoints = [];
+  for (const bucket of (data.bucket || [])) {
+    for (const dataset of (bucket.dataset || [])) {
+      for (const point of (dataset.point || [])) {
+        allPoints.push(point);
+      }
+    }
+  }
+
+  console.log(`Total data points for ${dataTypeKey}: ${allPoints.length}`);
+  return { point: allPoints };
 };
 
 /**
@@ -183,11 +194,27 @@ export const fetchGoogleFitSession = async (accessToken, sessionId) => {
       }
     });
 
-    if (!response.ok) {
-      throw new Error(`Session fetch failed: ${response.statusText}`);
-    }
+    console.log(`Google Fit session API response status: ${response.status} ${response.statusText}`);
+    const headersObj = {};
+    try { response.headers.forEach((v, k) => { headersObj[k] = v; }); } catch (e) {}
+    console.log('Google Fit session API response headers:', headersObj);
 
-    return await response.json();
+    const text = await response.text();
+    // Try to parse JSON, but log raw text for debugging
+    try {
+      const json = JSON.parse(text);
+      if (!response.ok) {
+        console.error('Session fetch returned error body:', JSON.stringify(json, null, 2));
+        throw new Error(`Session fetch failed: ${response.status} ${response.statusText}`);
+      }
+      console.log('Session fetch response body:', JSON.stringify(json, null, 2));
+      return json;
+    } catch (parseErr) {
+      // Not JSON
+      console.error('Session fetch returned non-JSON body:', text);
+      if (!response.ok) throw new Error(`Session fetch failed: ${response.status} ${response.statusText}`);
+      return text;
+    }
   } catch (error) {
     console.error('Error fetching session:', error);
     throw error;
