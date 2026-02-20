@@ -1,4 +1,4 @@
-import { useEffect, RefObject } from "react"
+import { useEffect, useRef, RefObject } from "react"
 import { Pose, Results } from "@mediapipe/pose"
 import { Camera } from "@mediapipe/camera_utils"
 import { processPose, resetPoseState } from "@/utils/poseLogic"
@@ -10,6 +10,19 @@ interface Props {
   tolerance?: number
   onRepUpdate: (reps: number) => void
   onPostureUpdate: (status: "correct" | "incorrect") => void
+  onCueUpdate?: (cue: string | null) => void
+}
+
+/* ── TTS helper ───────────────────────────────────────────────────────── */
+function speak(text: string) {
+  if (!("speechSynthesis" in window)) return
+  // cancel any current utterance so the new one plays immediately
+  window.speechSynthesis.cancel()
+  const utt = new SpeechSynthesisUtterance(text)
+  utt.rate  = 0.95
+  utt.pitch = 1.0
+  utt.volume = 1.0
+  window.speechSynthesis.speak(utt)
 }
 
 export function usePose({
@@ -18,8 +31,13 @@ export function usePose({
   isActive,
   tolerance = 0,
   onRepUpdate,
-  onPostureUpdate
+  onPostureUpdate,
+  onCueUpdate,
 }: Props) {
+  // Track last spoken cue + timestamp to avoid spamming
+  const lastCueRef  = useRef<string | null>(null)
+  const lastSpokenRef = useRef<number>(0)
+
   useEffect(() => {
     if (!isActive || !videoRef.current || !canvasRef.current) return
 
@@ -28,6 +46,8 @@ export function usePose({
     const ctx = canvas.getContext("2d")!
 
     resetPoseState()
+    lastCueRef.current   = null
+    lastSpokenRef.current = 0
 
     const pose = new Pose({
       locateFile: (f) =>
@@ -44,21 +64,33 @@ export function usePose({
     pose.onResults((results: Results) => {
       if (!results.poseLandmarks) return
 
-      // 🔑 Sync canvas size to actual rendered size
       const rect = canvas.getBoundingClientRect()
-      canvas.width = rect.width
+      canvas.width  = rect.width
       canvas.height = rect.height
 
       ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-      const { reps, posture } = processPose(results.poseLandmarks, tolerance)
+      const { reps, posture, cue } = processPose(results.poseLandmarks, tolerance)
 
       onRepUpdate(reps)
       onPostureUpdate(posture)
+      onCueUpdate?.(cue)
 
-      // No mirroring or scaling - just draw directly
+      // ── TTS: speak cue when it changes, max once every 4 s ──
+      const now = Date.now()
+      if (
+        cue !== null &&
+        (cue !== lastCueRef.current || now - lastSpokenRef.current > 8000) &&
+        now - lastSpokenRef.current > 4000
+      ) {
+        speak(cue)
+        lastCueRef.current   = cue
+        lastSpokenRef.current = now
+      } else if (cue === null) {
+        lastCueRef.current = null
+      }
+
       drawSkeleton(ctx, results.poseLandmarks)
-
     })
 
     const camera = new Camera(video, {
@@ -73,6 +105,7 @@ export function usePose({
 
     return () => {
       camera.stop()
+      window.speechSynthesis?.cancel()
       ctx.clearRect(0, 0, canvas.width, canvas.height)
     }
   }, [isActive])

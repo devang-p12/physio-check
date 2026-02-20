@@ -26,6 +26,7 @@ const ExerciseSession = () => {
   const [reps, setReps] = useState(0);
   const [postureStatus, setPostureStatus] =
     useState<"correct" | "incorrect">("correct");
+  const [formCue, setFormCue] = useState<string | null>(null);
   const [timer, setTimer] = useState(0);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [sessionEndTime, setSessionEndTime] = useState<Date | null>(null);
@@ -146,6 +147,7 @@ const ExerciseSession = () => {
     tolerance,
     onRepUpdate: setReps,
     onPostureUpdate: setPostureStatus,
+    onCueUpdate: setFormCue,
   });
 
   /* ---------------- SESSION HANDLERS ---------------- */
@@ -321,7 +323,7 @@ const ExerciseSession = () => {
         {!isReaction && (
           <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20">
             <div
-              className={`flex items-center gap-3 px-6 py-3 rounded-full backdrop-blur-md border shadow-2xl transition-colors duration-300 ${
+              className={`flex items-center gap-3 px-6 py-3 rounded-full backdrop-blur-md border shadow-2xl transition-all duration-300 ${
                 postureStatus === "correct"
                   ? "bg-teal-500/20 border-teal-400/50 text-teal-300"
                   : "bg-red-500/20 border-red-400/50 text-red-300"
@@ -335,7 +337,9 @@ const ExerciseSession = () => {
               ) : (
                 <>
                   <AlertCircle size={24} fill="currentColor" />
-                  <span className="font-bold tracking-wide">Straighten Back!</span>
+                  <span className="font-bold tracking-wide uppercase">
+                    {formCue ?? "Check your form"}
+                  </span>
                 </>
               )}
             </div>
