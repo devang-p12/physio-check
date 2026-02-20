@@ -117,17 +117,19 @@ export const refreshAccessToken = async (refreshToken) => {
  * Fetch fitness data from Google Fit using the Aggregate API.
  * This queries ALL data sources for a given data type, which is far more
  * reliable than querying a single data source stream.
+ * @param {number} [bucketDurationMs] - bucket size in ms. Defaults to the full range (one bucket).
+ *   Pass 86400000 for daily buckets (recommended for calorie totals).
  */
-export const fetchFitnessData = async (accessToken, dataTypeKey, startTimeMs, endTimeMs) => {
+export const fetchFitnessData = async (accessToken, dataTypeKey, startTimeMs, endTimeMs, bucketDurationMs) => {
   const dataType = DATA_TYPES[dataTypeKey];
 
   console.log(`Fetching ${dataTypeKey} (${dataType}) via aggregate API`);
   console.log(`Time range: ${new Date(startTimeMs).toISOString()} → ${new Date(endTimeMs).toISOString()}`);
 
-  // Use a single bucket spanning the full range so we get one aggregated result
+  const effectiveBucket = bucketDurationMs || (endTimeMs - startTimeMs);
   const body = {
     aggregateBy: [{ dataTypeName: dataType }],
-    bucketByTime: { durationMillis: endTimeMs - startTimeMs },
+    bucketByTime: { durationMillis: effectiveBucket },
     startTimeMillis: startTimeMs,
     endTimeMillis: endTimeMs,
   };

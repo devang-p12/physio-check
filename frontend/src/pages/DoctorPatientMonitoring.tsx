@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Heart, Activity, TrendingUp, Flame, Dumbbell,
-  Clock, ChevronRight, Calendar, User, Target, CheckCircle2, Zap,
+  Clock, ChevronRight, Calendar, User, Target, CheckCircle2, Zap, BarChart2,
 } from 'lucide-react';
 
 const DoctorPatientMonitoring = () => {
@@ -162,6 +162,13 @@ const DoctorPatientMonitoring = () => {
               <p className="text-sm text-slate-500">{patient.email}</p>
             </div>
           </div>
+          <button
+            onClick={() => navigate(`/doctor/patient/${patientId}/report`)}
+            className="ml-auto flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-all shadow-sm shadow-teal-200"
+          >
+            <BarChart2 size={16} />
+            Generate Report
+          </button>
         </div>
       </header>
 

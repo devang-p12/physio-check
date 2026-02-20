@@ -9,7 +9,8 @@ import {
   getDoctorPatientSessions, 
   getSessionDetails, 
   getPatientPerformanceSummary,
-  getAssignmentSessions 
+  getAssignmentSessions,
+  generatePatientReport
 } from "../controllers/doctorSession.controller.js";
 import { getPatientGoogleFit } from "../controllers/doctorSession.controller.js";
 
@@ -28,5 +29,6 @@ router.get("/session/:sessionId", auth, doctorOnly, getSessionDetails);
 router.get("/patient/:patientId/performance", auth, doctorOnly, getPatientPerformanceSummary);
 router.get("/assignment/:assignmentId/sessions", auth, doctorOnly, getAssignmentSessions);
 router.get('/patient/:patientId/google-fit', auth, doctorOnly, getPatientGoogleFit);
+router.get('/patient/:patientId/report', auth, doctorOnly, generatePatientReport);
 
 export default router;
