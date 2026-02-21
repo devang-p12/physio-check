@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PhysioCheck Bot</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 40px;
+            background: #f0f2f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #chat {
+            width: 480px;
+            height: 440px;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            overflow-y: auto;
+            padding: 15px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        input {
+            width: 340px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            outline: none;
+        }
+        button {
+            padding: 10px 15px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover { background: #218838; }
+        .top-buttons { margin-bottom: 10px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+        #start-btn   { background: #007bff; }
+        #start-btn:hover { background: #0056b3; }
+        #login-btn   { background: #6f42c1; }
+        #login-btn:hover { background: #5a32a3; }
+        #summary-btn { background: #fd7e14; }
+        #summary-btn:hover { background: #e66a00; }
+        #report-btn  { background: #20c997; }
+        #report-btn:hover { background: #17a589; }
+        .user-msg { margin-bottom: 10px; }
+        .bot-msg  { margin-bottom: 10px; color: #2c3e50; }
+        .opt-btn {
+            padding: 6px 12px; margin: 3px;
+            border-radius: 4px; border: none;
+            cursor: pointer; font-weight: bold;
+            color: white; background: #17a2b8;
+        }
+        .opt-btn:hover   { background: #117a8b; }
+        .opt-btn:disabled { background: #aaa; cursor: default; }
+        .redflag-box {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 6px;
+            padding: 10px;
+            margin: 8px 0;
+            color: #856404;
+        }
+        #summary-panel, #report-panel {
+            display: none;
+            width: 480px;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-top: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        /* Compliance bar styles */
+        .compliance-bar-wrap {
+            background: #e9ecef;
+            border-radius: 6px;
+            height: 14px;
+            width: 100%;
+            margin: 4px 0 10px;
+            overflow: hidden;
+        }
+        .compliance-bar {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.6s ease;
+        }
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+            margin: 12px 0;
+        }
+        .stat-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+            border: 1px solid #e0e0e0;
+        }
+        .stat-card .val {
+            font-size: 22px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .stat-card .lbl {
+            font-size: 11px;
+            color: #888;
+            margin-top: 3px;
+        }
+        .trend-up   { color: #28a745; }
+        .trend-down { color: #dc3545; }
+        .ex-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+
+<h3>PhysioCheck Assistant</h3>
+<div class="top-buttons">
+    <button id="start-btn"   onclick="startIntake()">New Patient</button>
+    <button id="login-btn"   onclick="startLogin()">Returning Patient</button>
+    <button id="summary-btn" onclick="getSummary()">My Summary</button>
+    <button id="report-btn"  onclick="getExerciseReport()">📊 Exercise Report</button>
+</div>
+
+<div id="chat"></div>
+
+<div>
+    <input type="text" id="msg" placeholder="Ask about your rehab..." onkeypress="if(event.key === 'Enter') send()">
+    <button onclick="send()">Send</button>
+</div>
+
+<div id="summary-panel"></div>
+<div id="report-panel"></div>
+
+<script>
+    let userId       = null;
+    let intakeMode   = false;
+    let loginMode    = false;
+    let checkinMode  = false;
+    let intakeStep   = 0;
+    let intakeData   = {};
+    let checkinData  = {};
+    let checkinStep  = 0;
+
+    const profileQuestions = [
+        { key: 'name',        prompt: "What is your full name?",                          type: 'text' },
+        { key: 'age',         prompt: "How old are you?",                                 type: 'text' },
+        { key: 'gender',      prompt: "What is your gender?",                             type: 'buttons', options: ['Male','Female','Other'] },
+        { key: 'injury_type', prompt: "What is your injury or condition?",                type: 'text' },
+        { key: 'injury_date', prompt: "When did the injury occur? (e.g. 2025-01-15)",    type: 'text' },
+        { key: 'pain_score',  prompt: "On a scale of 1–10, what is your current pain?",  type: 'pain' }
+    ];
+
+    const symptomQuestions = [
+        { key: 'weight_bearing', prompt: "Can you bear weight on the injured area?",          type: 'buttons', options: ['Yes','Partially','No'] },
+        { key: 'swelling',       prompt: "How much swelling do you have?",                    type: 'buttons', options: ['None','Mild','Moderate','Severe'] },
+        { key: 'pop_sound',      prompt: "Did you hear a pop or snap at the time of injury?", type: 'buttons', options: ['Yes','No'] },
+        { key: 'numbness',       prompt: "Do you have any numbness or tingling?",             type: 'buttons', options: ['Yes','No'] },
+        { key: 'deformity',      prompt: "Is there any visible deformity around the injury?", type: 'buttons', options: ['Yes','No'] }
+    ];
+
+    const allIntakeQuestions = [...profileQuestions, ...symptomQuestions];
+
+    const checkinQuestions = [
+        { key: 'pain_score',    prompt: "Rate your pain today (1–10):",              type: 'pain' },
+        { key: 'swelling',      prompt: "How is the swelling today?",                type: 'buttons', options: ['None','Mild','Moderate','Severe'] },
+        { key: 'mobility',      prompt: "How is your mobility today?",               type: 'buttons', options: ['Full','Limited','Very Limited'] },
+        { key: 'sleep_quality', prompt: "How did you sleep last night?",             type: 'buttons', options: ['Good','Fair','Poor'] },
+        { key: 'mood',          prompt: "How is your mood / confidence today?",      type: 'buttons', options: ['Good','Okay','Low'] }
+    ];
+
+    function appendBot(html) {
+        const chat = document.getElementById('chat');
+        chat.innerHTML += `<div class="bot-msg"><b>Bot:</b> <span>${html}</span></div>`;
+        chat.scrollTop = chat.scrollHeight;
+    }
+
+    function appendUser(text) {
+        const chat = document.getElementById('chat');
+        chat.innerHTML += `<div class="user-msg"><b>You:</b> ${text}</div>`;
+        chat.scrollTop = chat.scrollHeight;
+    }
+
+    function renderQuestion(q, onAnswer) {
+        if (q.type === 'text') {
+            appendBot(q.prompt);
+        } else if (q.type === 'pain') {
+            const btns = [1,2,3,4,5,6,7,8,9,10].map(n =>
+                `<button class="opt-btn" onclick="handleOptionClick(this, '${n}', currentAnswerCallback)">${n}</button>`
+            ).join('');
+            appendBot(`${q.prompt}<br><br>${btns}`);
+            currentAnswerCallback = onAnswer;
+        } else if (q.type === 'buttons') {
+            const btns = q.options.map(o =>
+                `<button class="opt-btn" onclick="handleOptionClick(this, '${o}', currentAnswerCallback)">${o}</button>`
+            ).join('');
+            appendBot(`${q.prompt}<br><br>${btns}`);
+            currentAnswerCallback = onAnswer;
+        }
+    }
+
+    let currentAnswerCallback = null;
+
+    function handleOptionClick(btn, value, callback) {
+        btn.closest('span').querySelectorAll('.opt-btn').forEach(b => b.disabled = true);
+        btn.style.background = '#28a745';
+        appendUser(value);
+        if (callback) callback(value);
+    }
+
+    // ── Intake ────────────────────────────────────────────────────
+    function startIntake() {
+        intakeMode = true; loginMode = false; checkinMode = false;
+        intakeStep = 0; intakeData = {};
+        document.getElementById('chat').innerHTML = '';
+        document.getElementById('summary-panel').style.display = 'none';
+        document.getElementById('report-panel').style.display  = 'none';
+        appendBot("Welcome to PhysioCheck! Let's set up your profile.");
+        setTimeout(() => renderIntakeQuestion(), 400);
+    }
+
+    function renderIntakeQuestion() {
+        if (intakeStep === profileQuestions.length) {
+            appendBot("<b>Great! Now a few questions about your symptoms.</b>");
+            setTimeout(() => { renderQuestion(allIntakeQuestions[intakeStep], handleIntakeAnswer); }, 400);
+            return;
+        }
+        renderQuestion(allIntakeQuestions[intakeStep], handleIntakeAnswer);
+    }
+
+    function handleIntakeAnswer(value) {
+        intakeData[allIntakeQuestions[intakeStep].key] = value;
+        intakeStep++;
+        if (intakeStep < allIntakeQuestions.length) {
+            setTimeout(() => renderIntakeQuestion(), 300);
+        } else {
+            setTimeout(() => showIntakeSummary(), 400);
+        }
+    }
+
+    function showIntakeSummary() {
+        const s = intakeData;
+        appendBot(`
+            Here's your profile summary:<br><br>
+            <b>Name:</b> ${s.name} &nbsp;|&nbsp; <b>Age:</b> ${s.age} &nbsp;|&nbsp; <b>Gender:</b> ${s.gender}<br>
+            <b>Injury:</b> ${s.injury_type}<br>
+            <b>Injury Date:</b> ${s.injury_date} &nbsp;|&nbsp; <b>Pain Score:</b> ${s.pain_score}/10<br><br>
+            <b>Symptom Assessment:</b><br>
+            Weight Bearing: ${s.weight_bearing} &nbsp;|&nbsp; Swelling: ${s.swelling}<br>
+            Pop/Snap Sound: ${s.pop_sound} &nbsp;|&nbsp; Numbness: ${s.numbness} &nbsp;|&nbsp; Deformity: ${s.deformity}<br><br>
+            Is this correct?<br>
+            <button class="opt-btn" id="yes-btn" onclick="confirmIntake()">Yes, confirm</button>
+            <button class="opt-btn" id="no-btn"  onclick="startIntake()" style="background:#dc3545">No, start over</button>
+        `);
+    }
+
+    async function confirmIntake() {
+        document.getElementById('yes-btn').disabled = true;
+        document.getElementById('no-btn').disabled  = true;
+        try {
+            const res  = await fetch('http://localhost:5000/intake', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(intakeData) });
+            const data = await res.json();
+            if (data.success) {
+                userId = data.userId; intakeMode = false;
+                if (data.redFlags && data.redFlags.length > 0) {
+                    appendBot(`<div class="redflag-box">⚠️ <b>Important:</b> Concerns detected:<br>${data.redFlags.map(f => `• ${f}`).join('<br>')}<br><br>Please consult a doctor before starting rehab.</div>`);
+                }
+                appendBot(`Profile saved! Welcome, ${intakeData.name}. You can now chat about your recovery.`);
+            } else { appendBot("Something went wrong. Please try again."); }
+        } catch { appendBot("Could not connect to server."); }
+    }
+
+    // ── Login ─────────────────────────────────────────────────────
+    function startLogin() {
+        loginMode = true; intakeMode = false; checkinMode = false;
+        document.getElementById('chat').innerHTML = '';
+        document.getElementById('summary-panel').style.display = 'none';
+        document.getElementById('report-panel').style.display  = 'none';
+        appendBot("Welcome back! Please type your name to continue.");
+    }
+
+    async function handleLoginInput(value) {
+        try {
+            const res  = await fetch('http://localhost:5000/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: value }) });
+            const data = await res.json();
+            if (data.found) {
+                userId = data.userId; loginMode = false;
+                appendBot(`Welcome back, ${data.name}! You're in Phase ${data.phase}. Let's do a quick daily check-in first.`);
+                setTimeout(() => startCheckin(), 600);
+            } else {
+                appendBot(`No profile found for "${value}". Click <b>New Patient</b> to create one.`);
+                loginMode = false;
+            }
+        } catch { appendBot("Could not connect to server."); loginMode = false; }
+    }
+
+    // ── Check-in ──────────────────────────────────────────────────
+    function startCheckin() {
+        checkinMode = true; checkinStep = 0; checkinData = {};
+        renderCheckinQuestion();
+    }
+
+    function renderCheckinQuestion() { renderQuestion(checkinQuestions[checkinStep], handleCheckinAnswer); }
+
+    async function handleCheckinAnswer(value) {
+        checkinData[checkinQuestions[checkinStep].key] = value;
+        checkinStep++;
+        if (checkinStep < checkinQuestions.length) {
+            setTimeout(() => renderCheckinQuestion(), 300);
+        } else {
+            checkinMode = false;
+            await fetch('http://localhost:5000/checkin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, ...checkinData }) });
+            appendBot(`✅ Check-in logged! Pain: ${checkinData.pain_score}/10, Swelling: ${checkinData.swelling}, Mobility: ${checkinData.mobility}, Sleep: ${checkinData.sleep_quality}, Mood: ${checkinData.mood}.<br><br>How can I help with your recovery today?`);
+        }
+    }
+
+    // ── Summary ───────────────────────────────────────────────────
+    async function getSummary() {
+        if (!userId) { alert("Please log in first."); return; }
+        document.getElementById('report-panel').style.display  = 'none';
+        const panel = document.getElementById('summary-panel');
+        panel.style.display = 'block';
+        panel.innerHTML = '<i>Generating your recovery summary...</i>';
+        try {
+            const res  = await fetch(`http://localhost:5000/summary/${userId}`);
+            const data = await res.json();
+            const trendRows = data.painLogs.map(p => `
+                <tr>
+                    <td>${p.date}</td><td>${p.pain_score}/10</td><td>${p.swelling}</td>
+                    <td>${p.mobility}</td><td>${p.sleep_quality}</td><td>${p.mood}</td>
+                </tr>
+            `).join('');
+            const trendTable = data.painLogs.length > 0 ? `
+                <table border="1" cellpadding="5" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:13px">
+                    <tr style="background:#f0f2f5"><th>Date</th><th>Pain</th><th>Swelling</th><th>Mobility</th><th>Sleep</th><th>Mood</th></tr>
+                    ${trendRows}
+                </table>` : '<i>No check-ins logged yet.</i>';
+            panel.innerHTML = `
+                <h4 style="margin-top:0">📋 Recovery Summary</h4>
+                <p><b>Current Phase:</b> ${data.currentPhase} &nbsp;|&nbsp; <b>Total Chat Sessions:</b> ${data.totalSessions}</p>
+                <h5>📊 Progress Tracker</h5>${trendTable}<hr>
+                <div>${marked.parse(data.summary)}</div>`;
+        } catch { panel.innerHTML = '<p style="color:red">Could not load summary.</p>'; }
+    }
+
+    // ── Exercise Report ───────────────────────────────────────────
+    async function getExerciseReport() {
+        if (!userId) { alert("Please log in first."); return; }
+        document.getElementById('summary-panel').style.display = 'none';
+        const panel = document.getElementById('report-panel');
+        panel.style.display = 'block';
+        panel.innerHTML = '<i>⏳ Generating your exercise progress report...</i>';
+
+        try {
+            const res  = await fetch(`http://localhost:5000/exercise-report/${userId}`);
+            const data = await res.json();
+
+            if (!data.summary) {
+                // No exercise data yet
+                panel.innerHTML = `
+                    <h4 style="margin-top:0">📊 Exercise Progress Report</h4>
+                    <p style="color:#888">No exercises logged yet. Complete your first exercise session with the CV module, then come back here to see your report.</p>`;
+                return;
+            }
+
+            const { summary, logs } = data;
+            const trendIcon  = summary.trend === 'improving'
+                ? '<span class="trend-up">▲ Improving</span>'
+                : '<span class="trend-down">▼ Declining</span>';
+
+            const complianceColor = summary.avgCompliance >= 80 ? '#28a745'
+                : summary.avgCompliance >= 50 ? '#fd7e14' : '#dc3545';
+
+            // Per-exercise table rows
+            const exRows = Object.entries(summary.exerciseBreakdown).map(([name, stats]) => {
+                const color = stats.avgCompliance >= 80 ? '#28a745' : stats.avgCompliance >= 50 ? '#fd7e14' : '#dc3545';
+                return `
+                    <div class="ex-row">
+                        <span>${name}</span>
+                        <span style="font-size:12px;color:#888">${stats.sessions} session${stats.sessions > 1 ? 's' : ''}</span>
+                        <span style="font-weight:bold;color:${color}">${stats.avgCompliance}%</span>
+                    </div>
+                    <div class="compliance-bar-wrap">
+                        <div class="compliance-bar" style="width:${stats.avgCompliance}%;background:${color}"></div>
+                    </div>`;
+            }).join('');
+
+            panel.innerHTML = `
+                <h4 style="margin-top:0">📊 Exercise Progress Report</h4>
+
+                <div class="stat-grid">
+                    <div class="stat-card">
+                        <div class="val" style="color:${complianceColor}">${summary.avgCompliance}%</div>
+                        <div class="lbl">Avg Compliance</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="val">${summary.totalSessions}</div>
+                        <div class="lbl">Sessions Logged</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="val">${summary.avgPain !== 'N/A' ? summary.avgPain + '/10' : '—'}</div>
+                        <div class="lbl">Avg Pain (Exercise)</div>
+                    </div>
+                </div>
+
+                <p><b>Trend:</b> ${trendIcon} &nbsp;|&nbsp; Recent: ${summary.recentAvg}% vs Earlier: ${summary.earlierAvg}%</p>
+
+                <h5 style="margin-bottom:4px">Exercise Compliance Breakdown</h5>
+                ${exRows}
+
+                <hr style="margin:15px 0">
+                <div>${marked.parse(data.report)}</div>
+            `;
+        } catch(err) {
+            panel.innerHTML = '<p style="color:red">Could not load exercise report. Make sure the server is running.</p>';
+            console.error(err);
+        }
+    }
+
+    // ── Send ──────────────────────────────────────────────────────
+    async function send() {
+        const input = document.getElementById('msg');
+        if (!input.value.trim()) return;
+        const userText = input.value;
+        input.value = '';
+        if (intakeMode) {
+            const q = allIntakeQuestions[intakeStep];
+            if (q && q.type === 'text') { appendUser(userText); handleIntakeAnswer(userText); }
+            return;
+        }
+        if (loginMode)   { appendUser(userText); handleLoginInput(userText); return; }
+        if (checkinMode) { return; }
+        if (!userId) { appendUser(userText); appendBot("Please click <b>New Patient</b> or <b>Returning Patient</b> to get started."); return; }
+        appendUser(userText);
+        try {
+            const res  = await fetch('http://localhost:5000/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: userText, userId, checkinData }) });
+            const data = await res.json();
+            const botReply = data.reply || data.error || "No response from server";
+            const chat = document.getElementById('chat');
+            chat.innerHTML += `<div class="bot-msg"><b>Bot:</b><div>${marked.parse(botReply)}</div></div>`;
+            chat.scrollTop = chat.scrollHeight;
+        } catch { appendBot("Error: Could not connect to server."); }
+    }
+</script>
+</body>
+</html>
