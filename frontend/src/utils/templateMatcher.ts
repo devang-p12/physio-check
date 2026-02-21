@@ -1,40 +1,47 @@
-import { getPoseSimilarity } from "./customPoseLogic";
+import { getPoseSimilarity, createMasterTemplate } from "./customPoseLogic";
 
 export class TemplateMatcher {
   private template: any[][];
-  private threshold: number = 0.15; // How close they need to be (lower = stricter)
-  private currentState: 'START' | 'MID' | 'FINISH' = 'START';
+  private peakFrame: any[];
+  private startFrame: any[];
+  private threshold: number;
+  private currentState: "START" | "MID" = "START";
 
-  constructor(recordedTemplate: any[][]) {
-    this.template = recordedTemplate;
+  constructor(recordedBuffer: any[][]) {
+    const master = createMasterTemplate(recordedBuffer);
+
+    if (!master) {
+      // Fallback: treat the raw buffer as the template
+      this.template   = recordedBuffer;
+      this.startFrame = recordedBuffer[0];
+      this.peakFrame  = recordedBuffer[Math.floor(recordedBuffer.length / 2)];
+      this.threshold  = 0.22;
+    } else {
+      this.template   = master.fullSequence;
+      this.startFrame = master.startFrame;
+      this.peakFrame  = master.peakFrame;
+      this.threshold  = master.difficultyThreshold; // 0.22
+    }
   }
 
-  // Find the frame in the recording that is most "different" from the start
-  // This is usually the bottom of a squat or the top of a curl.
-  getMidPointFrame() {
-    return Math.floor(this.template.length / 2);
-  }
+  checkProgress(livePose: any[], onRepComplete: () => void): "correct" | "incorrect" {
+    const distToStart = getPoseSimilarity(livePose, this.startFrame);
+    const distToPeak  = getPoseSimilarity(livePose, this.peakFrame);
 
-  checkProgress(livePose: any[], onRepComplete: () => void) {
-    const startFrame = this.template[0];
-    const midFrame = this.template[this.getMidPointFrame()];
-    const endFrame = this.template[this.template.length - 1];
-
-    const distToStart = getPoseSimilarity(livePose, startFrame);
-    const distToMid = getPoseSimilarity(livePose, midFrame);
-
-    // STATE MACHINE LOGIC
-    if (this.currentState === 'START' && distToMid < this.threshold) {
-      this.currentState = 'MID';
-    } 
-    else if (this.currentState === 'MID' && distToStart < this.threshold) {
-      this.currentState = 'START';
-      onRepComplete(); // A full rep is completed when they return to start
+    if (this.currentState === "START" && distToPeak < this.threshold) {
+      this.currentState = "MID";
+    } else if (this.currentState === "MID" && distToStart < this.threshold) {
+      this.currentState = "START";
+      onRepComplete();
       return "correct";
     }
 
-    // Posture Check: If they are too far from ANY valid frame in the template
-    const minDistance = Math.min(distToStart, distToMid);
-    return minDistance < 0.3 ? "correct" : "incorrect";
+    // Posture quality: how close are they to any valid waypoint
+    const minDistance = Math.min(distToStart, distToPeak);
+    return minDistance < 0.35 ? "correct" : "incorrect";
+  }
+
+  reset() {
+    this.currentState = "START";
   }
 }
