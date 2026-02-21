@@ -4,6 +4,9 @@ import { Play, StopCircle, ChevronLeft, Activity, Repeat2, Zap } from "lucide-re
 import { Pose, POSE_CONNECTIONS } from "@mediapipe/pose";
 import type { Results } from "@mediapipe/pose";
 import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
+import * as faceapi from "face-api.js";
+
+
 
 // ───────────────────────────────────────────────────────────────────────────────
 interface NormLandmark { x: number; y: number; z: number; visibility: number; }
@@ -69,7 +72,7 @@ class LiveMatcher {
   private readonly cooldownMs = 1500;
   private readonly repThreshold = 75;
   private lastSampleMs = 0;
-  private readonly sampleIntervalMs = 100; // ≈ 10 fps, matching template extraction rate
+  private readonly sampleIntervalMs = 100;
   private _lastResult: LiveMatchResult | null = null;
 
   constructor(frames: NormFrame[]) {
@@ -146,8 +149,22 @@ interface Template {
   category: string;
   frameCount: number;
   durationSeconds: number;
-  frames: number[][][];  // frames[i][j] = [x,y,z,vis] — normalised sparse landmarks
+  frames: number[][][];
 }
+
+// Emotions considered strain indicators
+const STRAIN_EMOTIONS = ["angry", "sad", "fearful", "disgusted"];
+
+// Emoji map for display
+const EMOTION_EMOJI: Record<string, string> = {
+  happy:     "😊",
+  neutral:   "😐",
+  surprised: "😮",
+  angry:     "😠",
+  sad:       "😢",
+  fearful:   "😨",
+  disgusted: "🤢",
+};
 
 const PatientCustomExercise: React.FC = () => {
   const navigate = useNavigate();
@@ -168,6 +185,9 @@ const PatientCustomExercise: React.FC = () => {
     status: "Press Start to begin",
   });
 
+  // ── Emotion display state ─────────────────────────────────────────────────
+  const [strainEmotion, setStrainEmotion] = useState<string | null>(null);
+
   const videoRef  = useRef<HTMLVideoElement>(null);
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const poseRef    = useRef<Pose | null>(null);
@@ -179,6 +199,16 @@ const PatientCustomExercise: React.FC = () => {
   const repCountRef = useRef(0);
   const timerRef   = useRef<number | null>(null);
 
+  // ── Emotion / audio refs ──────────────────────────────────────────────────
+  const emotionModelLoaded  = useRef(false);
+  const lastAudioTimeRef    = useRef(0);
+  const frameCounterRef     = useRef(0);
+  const isActiveRef         = useRef(false);
+  const matchSimilarityRef  = useRef(0);
+
+  // Keep refs in sync with state so async loops read current values
+  useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
+
   // ── Load assignment + template ────────────────────────────────────────────
   useEffect(() => {
     if (!assignmentId) { setError("No assignment ID"); setLoadingData(false); return; }
@@ -186,7 +216,6 @@ const PatientCustomExercise: React.FC = () => {
 
     const load = async () => {
       try {
-        // 1. Get assignment (which has customTemplateId)
         const assignRes = await fetch(`http://localhost:5000/patient/assignment/${assignmentId}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -198,7 +227,6 @@ const PatientCustomExercise: React.FC = () => {
         const tmplId = assign.customTemplateId;
         if (!tmplId) throw new Error("This assignment does not have a custom exercise template");
 
-        // 2. Get full template with frames
         const tmplRes = await fetch(`http://localhost:5000/patient/custom-template/${tmplId}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -206,7 +234,6 @@ const PatientCustomExercise: React.FC = () => {
         const tmplData = await tmplRes.json();
         setTemplate(tmplData.template);
 
-        // 3. Deserialise frames (33 landmarks per frame) and init TemplateMatcher
         const normFrames = tmplData.template.frames.map((f: number[][]) =>
           f.map(([x, y, z, v]) => ({ x, y, z, visibility: v ?? 1 }))
         );
@@ -221,6 +248,21 @@ const PatientCustomExercise: React.FC = () => {
     load();
   }, [assignmentId]);
 
+  // ── Load face-api emotion models ──────────────────────────────────────────
+  useEffect(() => {
+    const loadEmotionModels = async () => {
+      try {
+        await faceapi.nets.tinyFaceDetector.loadFromUri("/models");
+        await faceapi.nets.faceExpressionNet.loadFromUri("/models");
+        emotionModelLoaded.current = true;
+        console.log("Emotion models loaded");
+      } catch (err) {
+        console.error("Emotion model load failed", err);
+      }
+    };
+    loadEmotionModels();
+  }, []);
+
   // ── Timer ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (isActive) {
@@ -230,6 +272,20 @@ const PatientCustomExercise: React.FC = () => {
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [isActive]);
+
+  // ── Audio warning ─────────────────────────────────────────────────────────
+  const triggerAudioWarning = useCallback(() => {
+    const now = Date.now();
+    if (now - lastAudioTimeRef.current < 8000) return; // 8 s cooldown
+    lastAudioTimeRef.current = now;
+    const msg = new SpeechSynthesisUtterance(
+      "Please do not pressure yourself. Take it slow."
+    );
+    msg.rate   = 0.9;
+    msg.pitch  = 1;
+    msg.volume = 1;
+    window.speechSynthesis.speak(msg);
+  }, []);
 
   // ── MediaPipe setup ───────────────────────────────────────────────────────
   const initPose = useCallback(async () => {
@@ -251,6 +307,7 @@ const PatientCustomExercise: React.FC = () => {
         if (norm && matcherRef.current) {
           const res = matcherRef.current.processFrame(norm);
           repCountRef.current = res.repCount;
+          matchSimilarityRef.current = res.similarity;
           setMatchResult({ similarity: res.similarity, repCount: res.repCount, status: res.status });
           const col = res.similarity >= 75 ? "#10b981" : res.similarity >= 45 ? "#f59e0b" : "#94a3b8";
           drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: col, lineWidth: 2 });
@@ -272,17 +329,56 @@ const PatientCustomExercise: React.FC = () => {
       streamRef.current = stream;
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
+
       const sendLoop = async () => {
         if (stopRef.current) return;
-        if (videoRef.current && videoRef.current.readyState >= 2)
+
+        if (videoRef.current && videoRef.current.readyState >= 2) {
           await pose.send({ image: videoRef.current });
+
+          // ───────── Emotion Detection (Every 10 Frames) ─────────
+          frameCounterRef.current++;
+          if (
+            emotionModelLoaded.current &&
+            frameCounterRef.current % 10 === 0 &&
+            isActiveRef.current
+          ) {
+            try {
+              const detection = await faceapi
+                .detectSingleFace(
+                  videoRef.current,
+                  new faceapi.TinyFaceDetectorOptions()
+                )
+                .withFaceExpressions();
+
+              if (detection?.expressions) {
+                // Pick dominant emotion for display
+                const dominantEmotion = Object.entries(detection.expressions as any)
+                  .sort((a: any, b: any) => b[1] - a[1])[0][0];
+                setStrainEmotion(dominantEmotion);
+
+                // Strain score: angry + sad + fearful combined confidence
+                const { angry, sad, fearful } = detection.expressions as any;
+                const strainScore = (angry ?? 0) + (sad ?? 0) + (fearful ?? 0);
+
+                if (strainScore > 0.8 && matchSimilarityRef.current < 50) {
+                  triggerAudioWarning();
+                }
+              }
+            } catch (err) {
+              console.warn("Emotion detection error", err);
+            }
+          }
+        }
+
         animRef.current = requestAnimationFrame(sendLoop);
       };
+
       animRef.current = requestAnimationFrame(sendLoop);
     } catch (e: any) {
       alert("Camera error: " + e.message);
     }
-  }, []);
+  }, [triggerAudioWarning]);
 
   const stopCamera = useCallback(() => {
     stopRef.current = true;
@@ -308,6 +404,9 @@ const PatientCustomExercise: React.FC = () => {
       setIsActive(true);
       matcherRef.current = new LiveMatcher(templateFramesRef.current);
       repCountRef.current = 0;
+      frameCounterRef.current = 0;
+      lastAudioTimeRef.current = 0;
+      setStrainEmotion(null);
       setMatchResult({ similarity: 0, repCount: 0, status: "Perform the exercise" });
       initPose();
     } catch (e: any) {
@@ -320,6 +419,8 @@ const PatientCustomExercise: React.FC = () => {
     const token = localStorage.getItem("token");
     stopCamera();
     setIsActive(false);
+    setStrainEmotion(null);
+    window.speechSynthesis.cancel();
 
     try {
       await fetch("http://localhost:5000/session/complete", {
@@ -337,12 +438,13 @@ const PatientCustomExercise: React.FC = () => {
     navigate("/patient");
   };
 
-  // ── Format timer ─────────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
   const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
-  // ── Similarity colour ─────────────────────────────────────────────────────
   const simColour = (s: number) =>
     s >= 75 ? "text-emerald-400" : s >= 45 ? "text-yellow-400" : "text-slate-400";
+
+  const isStrainEmotion = strainEmotion ? STRAIN_EMOTIONS.includes(strainEmotion) : false;
 
   // ── Render ────────────────────────────────────────────────────────────────
   if (loadingData) {
@@ -396,7 +498,22 @@ const PatientCustomExercise: React.FC = () => {
           <ChevronLeft size={16} /> Dashboard
         </button>
 
-        {/* Similarity ring — centre of camera */}
+        {/* ── Emotion badge — top-right of camera feed ── */}
+        {isActive && strainEmotion && (
+          <div className={`absolute top-4 right-4 z-20 flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold backdrop-blur-sm border transition-all ${
+            isStrainEmotion
+              ? "bg-red-500/20 border-red-500/40 text-red-300"
+              : "bg-slate-800/80 border-slate-700 text-slate-300"
+          }`}>
+            <span className="text-lg leading-none">{EMOTION_EMOJI[strainEmotion] ?? "😐"}</span>
+            <span className="capitalize">{strainEmotion}</span>
+            {isStrainEmotion && (
+              <span className="text-[10px] uppercase tracking-widest text-red-400 font-bold">Strain</span>
+            )}
+          </div>
+        )}
+
+        {/* Similarity overlay — bottom centre of camera */}
         {isActive && (
           <div className="absolute inset-0 z-20 flex items-end justify-center pb-8 pointer-events-none">
             <div className="bg-slate-900/80 backdrop-blur-sm rounded-2xl px-6 py-3 flex items-center gap-4">
@@ -476,6 +593,32 @@ const PatientCustomExercise: React.FC = () => {
             <span className="text-white font-bold font-mono">{fmt(timer)}</span>
           </div>
         </div>
+
+        {/* ── Expression card (side panel) ── */}
+        {isActive && strainEmotion && (
+          <div className={`rounded-xl px-4 py-3 flex items-center justify-between border transition-all ${
+            isStrainEmotion
+              ? "bg-red-500/10 border-red-500/30"
+              : "bg-slate-800 border-slate-700"
+          }`}>
+            <div>
+              <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-0.5">
+                Expression
+              </p>
+              <p className={`font-semibold capitalize text-sm ${
+                isStrainEmotion ? "text-red-300" : "text-emerald-300"
+              }`}>
+                {strainEmotion}
+              </p>
+              {isStrainEmotion && (
+                <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest mt-0.5">
+                  Strain detected
+                </p>
+              )}
+            </div>
+            <span className="text-3xl">{EMOTION_EMOJI[strainEmotion] ?? "😐"}</span>
+          </div>
+        )}
 
         {/* Status message */}
         {isActive && (
