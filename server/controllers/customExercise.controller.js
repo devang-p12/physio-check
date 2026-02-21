@@ -84,7 +84,7 @@ export const removeTemplate = async (req, res) => {
 // ─── Doctor: assign a custom-template exercise to a patient ─────────────────
 export const assignCustomExercise = async (req, res) => {
   const doctorId = req.user.id;
-  const { patientId, customTemplateId, date, endDate, sets, repsPerSet } = req.body;
+  const { patientId, customTemplateId, date, endDate, sets, repsPerSet, tolerances = [] } = req.body;
 
   if (!patientId || !customTemplateId || !date || !sets || !repsPerSet) {
     return res.status(400).json({ message: 'patientId, customTemplateId, date, sets and repsPerSet are required' });
@@ -112,7 +112,7 @@ export const assignCustomExercise = async (req, res) => {
       customTemplateId,
       date: new Date(date),
       endDate: endDate ? new Date(endDate) : undefined,
-      prescription: JSON.stringify({ sets: Number(sets), repsPerSet: Number(repsPerSet), tolerance: 0 }),
+      prescription: JSON.stringify({ sets: Number(sets), repsPerSet: Number(repsPerSet), tolerances }),
     });
 
     return res.status(201).json({

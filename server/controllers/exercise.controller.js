@@ -51,7 +51,7 @@ export const seedExercises = async (req, res) => {
     const hasReaction = exercises.some(e => e.name === 'Reaction Exercise');
     if (!hasReaction) {
       const created = await createExercise({ name: 'Reaction Exercise', reps: null, duration: 30, description: 'Reaction time exercise (tap targets / fingertip)' });
-      return res.status(201).json({ message: 'Reaction Exercise added', exercises: [ ...exercises, created ] });
+      return res.status(201).json({ message: 'Reaction Exercise added', exercises: [...exercises, created] });
     }
 
     return res.json({ message: "Exercises already exist", exercises });
