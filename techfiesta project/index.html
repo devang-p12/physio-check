@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PhysioAI | Live Rep Validation</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    
+    <!-- MediaPipe Dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>PhysioAI <span style="font-weight: 400; font-size: 1rem; opacity: 0.6;">v1.0</span></h1>
+            <p>Doctor-validated exercise repetitions specialized for home recovery.</p>
+        </header>
+
+        <div class="main-layout">
+            <!-- Reference Section -->
+            <div class="video-card">
+                <div class="status-badge" style="background: var(--primary); color: white;">REFERENCE</div>
+                <div class="video-container" id="reference-zone">
+                    <div class="upload-area" id="drop-zone" style="z-index: 10; position: relative;">
+                        <div style="font-size: 3rem; margin-bottom: 1rem; pointer-events: none;">📁</div>
+                        <h3 style="pointer-events: none;">Reference Exercise</h3>
+                        <p style="pointer-events: none;">Upload or record a clean repetition</p>
+                        <input type="file" id="reference-input" accept="video/*" style="opacity: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: pointer; z-index: 20;">
+                    </div>
+                    <video id="reference-video" hidden style="z-index: 5;"></video>
+                    <canvas id="reference-canvas" style="z-index: 6; pointer-events: none;"></canvas>
+                </div>
+                <div class="controls">
+                    <button class="btn btn-secondary" id="record-ref-btn">Record Reference</button>
+                    <button class="btn btn-secondary" id="process-btn" disabled>Generate Template</button>
+                    <button class="btn btn-secondary" id="export-btn" disabled>Save Template</button>
+                </div>
+            </div>
+
+            <!-- Live Session Section -->
+            <div class="video-card">
+                <div id="live-status" class="status-badge">AWAITING CAMERA</div>
+                <div class="video-container">
+                    <video id="live-video" autoplay playsinline></video>
+                    <canvas id="live-canvas"></canvas>
+                </div>
+                
+                <div class="stats-overlay">
+                    <div class="stat-box">
+                        <div id="sim-score" class="stat-value">0%</div>
+                        <div class="stat-label">Similarity</div>
+                    </div>
+                    <div class="stat-box">
+                        <div id="rep-count" class="stat-value">0</div>
+                        <div class="stat-label">Reps Validated</div>
+                    </div>
+                    <div class="stat-box">
+                        <div id="fps-val" class="stat-value">15</div>
+                        <div class="stat-label">FPS</div>
+                    </div>
+                </div>
+
+                <div class="controls">
+                    <button class="btn" id="start-btn">Start Session</button>
+                    <button class="btn btn-secondary" id="reset-btn">Reset</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="main.js"></script>
+</body>
+</html>
