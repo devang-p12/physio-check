@@ -1,0 +1,3 @@
+create .env with
+GEMINI_API_KEY=
+MONGODB_URI=mongodb://localhost:27017/physiocheck
