@@ -8,30 +8,59 @@ export function resetPoseState() {
   state = "UP"
 }
 
-// tolerance: 0–30 degrees added by doctor to widen thresholds for injured patients
-export function processPose(landmarks: Landmark[], tolerance: number = 0) {
-  const clampedTolerance = Math.max(0, Math.min(30, tolerance))
+export function processPose(
+  landmarks: Landmark[],
+  tolerances: { joint: string; tolerance: number }[] = [],
+  exerciseName: string = "Squat"
+) {
+  // Map tolerances by joint name for easy lookup (clamp max to 90 degrees for safety)
+  const tMap = Object.fromEntries(
+    tolerances.map(t => [t.joint.toLowerCase(), Math.max(0, Math.min(90, t.tolerance))])
+  );
+  const kneeTol = tMap['knee'] ?? 0;
+  const hipTol = tMap['hip'] ?? 0;
+  const shoulderTol = tMap['shoulder'] ?? 0;
+  const elbowTol = tMap['elbow'] ?? 0;
 
   // Use whichever side has higher visibility (default left)
   const useRight =
     (landmarks[24]?.visibility ?? 0) > (landmarks[23]?.visibility ?? 0)
 
   const shoulder = useRight ? landmarks[12] : landmarks[11]
-  const hip      = useRight ? landmarks[24] : landmarks[23]
-  const knee     = useRight ? landmarks[26] : landmarks[25]
-  const ankle    = useRight ? landmarks[28] : landmarks[27]
-  const nose     = landmarks[0]
+  const hip = useRight ? landmarks[24] : landmarks[23]
+  const knee = useRight ? landmarks[26] : landmarks[25]
+  const ankle = useRight ? landmarks[28] : landmarks[27]
+  const wrist = useRight ? landmarks[16] : landmarks[15]
+  const elbow = useRight ? landmarks[14] : landmarks[13]
+  const nose = landmarks[0]
 
-  const kneeAngle = calculateAngle(hip, knee, ankle)
+  const exerciseLower = exerciseName.toLowerCase();
+  let cue: string | null = null;
 
-  const downThreshold = 90 + clampedTolerance
-  const upThreshold   = 160 - clampedTolerance
+  // Multiple motion handling
+  if (exerciseLower.includes("bicep") || exerciseLower.includes("curl")) {
+    // Bicep Curl tracking
+    const elbowAngle = calculateAngle(shoulder, elbow, wrist);
+    if (elbowAngle < 45 + elbowTol && state === "UP") state = "DOWN";
+    if (elbowAngle > 150 - elbowTol && state === "DOWN") { reps++; state = "UP"; }
 
-  if (kneeAngle < downThreshold && state === "UP")  state = "DOWN"
-  if (kneeAngle > upThreshold   && state === "DOWN") { reps++; state = "UP" }
+    // basic form check for curl
+    const shoulderElbowAngle = calculateAngle(hip, shoulder, elbow);
+    if (shoulderElbowAngle > 30 + shoulderTol) {
+      cue = "Keep elbows tucked to your sides";
+    }
+  } else {
+    // Squat (Default) tracking
+    const kneeAngle = calculateAngle(hip, knee, ankle);
+    const downThreshold = 90 + kneeTol;
+    const upThreshold = 160 - kneeTol;
 
-  // ── Form checks ──────────────────────────────────────────────
-  const cue = detectFormCue(shoulder, hip, knee, ankle, nose, state, kneeAngle)
+    if (kneeAngle < downThreshold && state === "UP") state = "DOWN";
+    if (kneeAngle > upThreshold && state === "DOWN") { reps++; state = "UP"; }
+
+    // ── Form checks ──────────────────────────────────────────────
+    cue = detectFormCue(shoulder, hip, knee, ankle, nose, state, kneeAngle);
+  }
 
   const posture: "correct" | "incorrect" = cue === null ? "correct" : "incorrect"
 
