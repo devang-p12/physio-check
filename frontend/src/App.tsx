@@ -26,6 +26,7 @@ import PatientBooking from "./pages/PatientBooking";
 import ChatbotPage from "./pages/Chatbot";
 import DoctorTodaysAssignments from "./pages/DoctorTodaysAssignments";
 import SessionPage from "./pages/SessionPage";
+import CreateExercise from "./pages/CreateExercise";
 
 // Reads localStorage fresh every render — prevents stale-closure redirect loops
 const RootRedirect = () => {
@@ -137,6 +138,15 @@ function App() {
           element={
             <ProtectedRoute role="doctor">
               <DoctorTodaysAssignments />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/doctor/create-exercise"
+          element={
+            <ProtectedRoute role="doctor">
+              <CreateExercise />
             </ProtectedRoute>
           }
         />
