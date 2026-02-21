@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Play, StopCircle, ChevronLeft, Activity, Repeat2, Zap, Expand } from "lucide-react";
+import { Play, StopCircle, ChevronLeft, Activity, Repeat2, Zap, Expand, CheckCircle2, AlertCircle } from "lucide-react";
 import { Pose, POSE_CONNECTIONS } from "@mediapipe/pose";
 import type { Results } from "@mediapipe/pose";
 import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
 import { Hands, HAND_CONNECTIONS } from "@mediapipe/hands";
 import type { Results as HandResults } from "@mediapipe/hands";
+import * as faceapi from "face-api.js";
 
 // ───────────────────────────────────────────────────────────────────────────────
 interface NormLandmark { x: number; y: number; z: number; visibility: number; }
@@ -181,6 +182,76 @@ interface Template {
   keyframeTimestamps?: number[];
 }
 
+// ── Posture analysis from raw landmarks ──────────────────────────────────────
+// Returns { status, cue } based on MediaPipe landmark positions.
+// Landmark indices: 11=L-shoulder, 12=R-shoulder, 23=L-hip, 24=R-hip,
+//                  25=L-knee, 26=R-knee, 27=L-ankle, 28=R-ankle
+function analysePosture(lms: any[]): { status: "correct" | "incorrect"; cue: string | null } {
+  if (!lms || lms.length < 29) return { status: "correct", cue: null };
+
+  const vis = (i: number) => (lms[i]?.visibility ?? 0) > 0.4;
+
+  // ── Shoulder alignment (are shoulders level?) ──
+  if (vis(11) && vis(12)) {
+    const shoulderTilt = Math.abs(lms[11].y - lms[12].y);
+    if (shoulderTilt > 0.06) {
+      return { status: "incorrect", cue: "Level your shoulders" };
+    }
+  }
+
+  // ── Spine alignment: shoulder midpoint vs hip midpoint ──
+  if (vis(11) && vis(12) && vis(23) && vis(24)) {
+    const shoulderMidX = (lms[11].x + lms[12].x) / 2;
+    const hipMidX = (lms[23].x + lms[24].x) / 2;
+    const lateralLean = Math.abs(shoulderMidX - hipMidX);
+    if (lateralLean > 0.08) {
+      return { status: "incorrect", cue: "Keep your back straight" };
+    }
+  }
+
+  // ── Hip drop (one hip significantly lower) ──
+  if (vis(23) && vis(24)) {
+    const hipTilt = Math.abs(lms[23].y - lms[24].y);
+    if (hipTilt > 0.06) {
+      return { status: "incorrect", cue: "Keep your hips level" };
+    }
+  }
+
+  // ── Knee cave (knees closer together than ankles — for squat-type moves) ──
+  if (vis(25) && vis(26) && vis(27) && vis(28)) {
+    const kneeWidth = Math.abs(lms[25].x - lms[26].x);
+    const ankleWidth = Math.abs(lms[27].x - lms[28].x);
+    if (kneeWidth < ankleWidth * 0.6) {
+      return { status: "incorrect", cue: "Push knees outward" };
+    }
+  }
+
+  // ── Forward head / neck tilt: nose vs shoulder midpoint ──
+  if (vis(0) && vis(11) && vis(12)) {
+    const noseX = lms[0].x;
+    const shoulderMidX = (lms[11].x + lms[12].x) / 2;
+    if (Math.abs(noseX - shoulderMidX) > 0.1) {
+      return { status: "incorrect", cue: "Tuck your chin in" };
+    }
+  }
+
+  return { status: "correct", cue: null };
+}
+
+// ── Emotion constants ────────────────────────────────────────────────────────
+const STRAIN_EMOTIONS = ["angry", "sad", "fearful", "disgusted"];
+
+const EMOTION_EMOJI: Record<string, string> = {
+  happy: "😊",
+  neutral: "😐",
+  surprised: "😮",
+  angry: "😠",
+  sad: "😢",
+  fearful: "😨",
+  disgusted: "🤢",
+};
+
+// ── Component ────────────────────────────────────────────────────────────────
 const PatientCustomExercise: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -205,17 +276,33 @@ const PatientCustomExercise: React.FC = () => {
   const holdTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isPhase2Ref = useRef(false);  // mutable mirror for onResults closure
 
+  // ── Posture state (mirrors ExerciseSession) ───────────────────────────────
+  const [postureStatus, setPostureStatus] = useState<"correct" | "incorrect">("correct");
+  const [formCue, setFormCue] = useState<string | null>(null);
+
+  // ── Emotion state ─────────────────────────────────────────────────────────
+  const [strainEmotion, setStrainEmotion] = useState<string | null>(null);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const poseRef = useRef<Pose | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const animRef = useRef<number | null>(null);
+  const stopRef = useRef(false);
   const matcherRef = useRef<LiveMatcher | null>(null);
   const templateFramesRef = useRef<any[][]>([]);
   const dingAudioRef = useRef(new Audio("/ding.mp3"));
   const refVideoRef = useRef<HTMLVideoElement>(null);
-  const stopRef = useRef(false);
   const [currentTargetIdx, setCurrentTargetIdx] = useState(0);
+
+  // ── Emotion / audio refs ──────────────────────────────────────────────────
+  const emotionModelLoaded = useRef(false);
+  const lastAudioTimeRef = useRef(0);
+  const frameCounterRef = useRef(0);
+  const isActiveRef = useRef(false);
+  const matchSimilarityRef = useRef(0);
+
+  useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
 
   // ── Load assignment + template ────────────────────────────────────────────
   useEffect(() => {
@@ -224,7 +311,6 @@ const PatientCustomExercise: React.FC = () => {
 
     const load = async () => {
       try {
-        // 1. Get assignment (which has customTemplateId)
         const assignRes = await fetch(`http://localhost:5000/patient/assignment/${assignmentId}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -236,7 +322,6 @@ const PatientCustomExercise: React.FC = () => {
         const tmplId = assign.customTemplateId;
         if (!tmplId) throw new Error("This assignment does not have a custom exercise template");
 
-        // 2. Get full template with frames
         const tmplRes = await fetch(`http://localhost:5000/patient/custom-template/${tmplId}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -276,6 +361,34 @@ const PatientCustomExercise: React.FC = () => {
     load();
   }, [assignmentId]);
 
+  // ── Load face-api emotion models ──────────────────────────────────────────
+  useEffect(() => {
+    const loadEmotionModels = async () => {
+      try {
+        await faceapi.nets.tinyFaceDetector.loadFromUri("/models");
+        await faceapi.nets.faceExpressionNet.loadFromUri("/models");
+        emotionModelLoaded.current = true;
+        console.log("Emotion models loaded");
+      } catch (err) {
+        console.error("Emotion model load failed", err);
+      }
+    };
+    loadEmotionModels();
+  }, []);
+
+  // ── Timer removed (unused) ────────────────────────────────────────────────
+
+  // ── Audio warning ─────────────────────────────────────────────────────────
+  const triggerAudioWarning = useCallback(() => {
+    const now = Date.now();
+    if (now - lastAudioTimeRef.current < 8000) return;
+    lastAudioTimeRef.current = now;
+    const msg = new SpeechSynthesisUtterance(
+      "Please do not pressure yourself. Take it slow."
+    );
+    msg.rate = 0.9; msg.pitch = 1; msg.volume = 1;
+    window.speechSynthesis.speak(msg);
+  }, []);
   const initPose = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current || !templateRef.current) return;
     const canvas = canvasRef.current;
@@ -299,13 +412,6 @@ const PatientCustomExercise: React.FC = () => {
       const sc = templateRef.current?.stretchConfig;
       if (!sc) return;
 
-      // In stretch mode, the landmark could be a body point (0-32) or a hand point (0-20)
-      // If we selected a hand point, it was picked from PALM_STRETCH_OPTIONS.
-      // We will look in both arrays based on what is available. 
-      // Note: for simplicity, since CreateExercise dropdown just gives an index, 
-      // if it's a palm exercise we assume indices refer to handLms, else poseLms.
-      // If combined (stretch), we check if the idx is < 21 (could be either, but usually hand if palm mode, or we just trust the mode).
-      // Actually, CreateExercise only shows Hand options if isPalmExercise is true on creation. 
       const sourceLms = isPalm ? latestHandLms : latestPoseLms;
 
       if (sourceLms && sourceLms[sc.lm1] && sourceLms[sc.lm2]) {
@@ -335,6 +441,50 @@ const PatientCustomExercise: React.FC = () => {
       }
     };
 
+    const handlePoseResults = (results: Results) => {
+      if (results.poseLandmarks) {
+        latestPoseLms = results.poseLandmarks as any[] | null;
+        // ── DTW match ──
+        const norm = PoseNormalizer.normalize(results.poseLandmarks as any);
+        if (norm && matcherRef.current && (!runHands || !isPalm)) {
+          const res = matcherRef.current.processFrame(norm);
+          matchSimilarityRef.current = res.similarity;
+          setSimilarity(res.similarity);
+          setStatus(res.status);
+          setCurrentTargetIdx(matcherRef.current.currentTargetIndex);
+
+          if (templateRef.current?.exerciseMode === "stretch" && res.repCount > 0 && !isPhase2Ref.current) {
+            isPhase2Ref.current = true; setHoldSecs(0);
+            holdTimerRef.current = setInterval(() => setHoldSecs(s => s + 1), 1000);
+            setStatus("Keyframe matched! Now hold the stretch.");
+          } else if (res.repCount > repCount) {
+            setRepCount(res.repCount);
+            dingAudio.currentTime = 0; dingAudio.play().catch(() => { });
+          }
+
+          const col = res.similarity >= 75 ? "#10b981" : res.similarity >= 45 ? "#f59e0b" : "#94a3b8";
+          drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: col, lineWidth: 2 });
+          drawLandmarks(ctx, results.poseLandmarks, { color: "#ffffff", lineWidth: 1, radius: 3 });
+        } else {
+          drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: "#14b8a6", lineWidth: 2 });
+          drawLandmarks(ctx, results.poseLandmarks, { color: "#ffffff", lineWidth: 1, radius: 3 });
+        }
+
+        // ── Posture analysis ──
+        const posture = analysePosture(results.poseLandmarks as any);
+        setPostureStatus(posture.status);
+        setFormCue(posture.cue);
+      }
+      processPhase2();
+    };
+
+    if (runPose) {
+      pose = new Pose({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}` });
+      pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+      pose.onResults(handlePoseResults);
+      await pose.initialize();
+    }
+
     if (runHands) {
       hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
       hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
@@ -342,16 +492,13 @@ const PatientCustomExercise: React.FC = () => {
         if (stopRef.current) return;
         const c = canvasRef.current;
         if (!c) return;
-        const ctx = c.getContext("2d")!;
-
+        const ctxH = c.getContext("2d")!;
         latestHandLms = r.multiHandLandmarks?.[0] || null;
-
         if (r.multiHandLandmarks && r.multiHandLandmarks.length > 0) {
           for (const handLms of r.multiHandLandmarks) {
-            drawConnectors(ctx, handLms, HAND_CONNECTIONS, { color: "#a78bfa", lineWidth: 3 });
-            drawLandmarks(ctx, handLms, { color: "#fff", fillColor: "#a78bfa", radius: 5 });
+            drawConnectors(ctxH, handLms, HAND_CONNECTIONS, { color: "#a78bfa", lineWidth: 3 });
+            drawLandmarks(ctxH, handLms, { color: "#fff", fillColor: "#a78bfa", radius: 5 });
           }
-
           if (!runPose || isPalm) {
             const norm = HandNormalizer.normalize(r.multiHandLandmarks[0]);
             if (norm && matcherRef.current && !isPhase2Ref.current) {
@@ -371,62 +518,14 @@ const PatientCustomExercise: React.FC = () => {
       await hands.initialize();
     }
 
-    if (runPose) {
-      pose = new Pose({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}` });
-      pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-      pose.onResults((r: Results) => {
-        if (stopRef.current) return;
-        const c = canvasRef.current, v = videoRef.current;
-        if (!c || !v) return;
-        const ctx = c.getContext("2d")!;
-
-        latestPoseLms = r.poseLandmarks as any[] | null;
-
-        // Clear canvas for pose (hands runs in parallel, so clear first here if pose is running)
-        if (!runHands) {
-          c.width = v.videoWidth || 640;
-          c.height = v.videoHeight || 480;
-          ctx.clearRect(0, 0, c.width, c.height);
-        }
-
-        if (r.poseLandmarks) {
-          drawConnectors(ctx, r.poseLandmarks, POSE_CONNECTIONS, { color: "#14b8a6", lineWidth: 3 });
-          drawLandmarks(ctx, r.poseLandmarks, { color: "#fff", fillColor: "#14b8a6", radius: 5 });
-
-          const norm = PoseNormalizer.normalize(r.poseLandmarks as any);
-          if (norm && matcherRef.current && (!runHands || !isPalm)) {
-            const res = matcherRef.current.processFrame(norm);
-            setSimilarity(res.similarity);
-            setStatus(res.status);
-            setCurrentTargetIdx(matcherRef.current.currentTargetIndex);
-
-            if (templateRef.current?.exerciseMode === "stretch" && res.repCount > 0 && !isPhase2Ref.current) {
-              isPhase2Ref.current = true; setHoldSecs(0);
-              holdTimerRef.current = setInterval(() => setHoldSecs(s => s + 1), 1000);
-              setStatus("Keyframe matched! Now hold the stretch.");
-            } else if (res.repCount > repCount) {
-              setRepCount(res.repCount); dingAudio.currentTime = 0; dingAudio.play().catch(() => { });
-            }
-          } else if (!norm && matcherRef.current && !isPhase2Ref.current && !runHands) {
-            setStatus(matcherRef.current.processFrame(null).status);
-          }
-        } else if (matcherRef.current && !isPhase2Ref.current && !runHands) {
-          setStatus(matcherRef.current.processFrame(null).status);
-        }
-        processPhase2();
-      });
-      await pose.initialize();
-    }
-
     stopRef.current = false;
-
-    // assign ref just for cleanup purposes
     poseRef.current = (pose || hands) as unknown as Pose;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
       streamRef.current = stream;
       if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play(); }
+
       const sendLoop = async () => {
         if (stopRef.current) return;
         if (videoRef.current && videoRef.current.readyState >= 2) {
@@ -439,14 +538,27 @@ const PatientCustomExercise: React.FC = () => {
           if (pose) promises.push(pose.send({ image: videoRef.current }));
           if (hands) promises.push(hands.send({ image: videoRef.current }));
           await Promise.all(promises);
+
+          // ── Emotion detection every 10 frames ──
+          frameCounterRef.current++;
+          if (emotionModelLoaded.current && frameCounterRef.current % 10 === 0 && isActiveRef.current) {
+            try {
+              const detection = await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions()).withFaceExpressions();
+              if (detection?.expressions) {
+                const dominantEmotion = Object.entries(detection.expressions as any).sort((a: any, b: any) => (b[1] as number) - (a[1] as number))[0][0];
+                setStrainEmotion(dominantEmotion);
+                const { angry, sad, fearful } = detection.expressions as any;
+                const strainScore = (angry ?? 0) + (sad ?? 0) + (fearful ?? 0);
+                if (strainScore > 0.8 && matchSimilarityRef.current < 50) { triggerAudioWarning(); }
+              }
+            } catch (err) { console.warn("Emotion detection error", err); }
+          }
         }
         animRef.current = requestAnimationFrame(sendLoop);
       };
       animRef.current = requestAnimationFrame(sendLoop);
-    } catch (e: any) {
-      alert("Camera error: " + e.message);
-    }
-  }, [repCount]); // Added repCount to dependencies to ensure dingAudio logic works with latest state
+    } catch (e: any) { alert("Camera error: " + e.message); }
+  }, [repCount, triggerAudioWarning]);
 
   const startLive = async () => {
     if (!assignmentId) return;
@@ -465,6 +577,9 @@ const PatientCustomExercise: React.FC = () => {
       setRepCount(0); isPhase2Ref.current = false;
       setBestStretchDist(null); setHoldSecs(0); setStretchDist(0);
       setSimilarity(0);
+      setStrainEmotion(null);
+      setPostureStatus("correct");
+      setFormCue(null);
       setStatus("Perform the exercise");
       initPose();
     } catch (e: any) {
@@ -482,6 +597,10 @@ const PatientCustomExercise: React.FC = () => {
     if (videoRef.current) videoRef.current.srcObject = null;
     poseRef.current?.close(); poseRef.current = null;
     setIsActive(false);
+    setStrainEmotion(null);
+    setPostureStatus("correct");
+    setFormCue(null);
+    window.speechSynthesis.cancel();
     setStatus("Session stopped");
 
     try {
@@ -503,9 +622,10 @@ const PatientCustomExercise: React.FC = () => {
     navigate("/patient");
   };
 
-  // ── Similarity colour ─────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
   const simColour = (s: number) =>
     s >= 75 ? "text-emerald-400" : s >= 45 ? "text-yellow-400" : "text-slate-400";
+  const isStrainEmotion = strainEmotion ? STRAIN_EMOTIONS.includes(strainEmotion) : false;
 
   // ── Video sync removed to allow continuous playback ──────────────────────────
   // The user requested a "normal video" experience.
@@ -523,10 +643,7 @@ const PatientCustomExercise: React.FC = () => {
     return (
       <div className="h-screen bg-slate-900 flex flex-col items-center justify-center gap-4 text-white px-6 text-center">
         <p className="text-red-400 text-lg font-medium">{error}</p>
-        <button
-          onClick={() => navigate("/patient")}
-          className="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 rounded-xl font-semibold transition"
-        >
+        <button onClick={() => navigate("/patient")} className="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 rounded-xl font-semibold transition">
           Back to Dashboard
         </button>
       </div>
@@ -545,9 +662,7 @@ const PatientCustomExercise: React.FC = () => {
         <video
           ref={videoRef}
           className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
-          playsInline
-          muted
-          autoPlay
+          playsInline muted autoPlay
         />
         <canvas
           ref={canvasRef}
@@ -562,7 +677,45 @@ const PatientCustomExercise: React.FC = () => {
           <ChevronLeft size={16} /> Dashboard
         </button>
 
-        {/* Similarity ring — centre of camera */}
+        {/* ── Posture / form cue overlay — top centre (same as ExerciseSession) ── */}
+        {isActive && (
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20">
+            <div className={`flex items-center gap-3 px-6 py-3 rounded-full backdrop-blur-md border shadow-2xl transition-all duration-300 ${postureStatus === "correct"
+              ? "bg-teal-500/20 border-teal-400/50 text-teal-300"
+              : "bg-red-500/20 border-red-400/50 text-red-300"
+              }`}>
+              {postureStatus === "correct" ? (
+                <>
+                  <CheckCircle2 size={22} fill="currentColor" />
+                  <span className="font-bold tracking-wide">Posture Correct</span>
+                </>
+              ) : (
+                <>
+                  <AlertCircle size={22} fill="currentColor" />
+                  <span className="font-bold tracking-wide uppercase">
+                    {formCue ?? "Check your form"}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Emotion badge — top-right ── */}
+        {isActive && strainEmotion && (
+          <div className={`absolute top-4 right-4 z-20 flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold backdrop-blur-sm border transition-all ${isStrainEmotion
+            ? "bg-red-500/20 border-red-500/40 text-red-300"
+            : "bg-slate-800/80 border-slate-700 text-slate-300"
+            }`}>
+            <span className="text-lg leading-none">{EMOTION_EMOJI[strainEmotion] ?? "😐"}</span>
+            <span className="capitalize">{strainEmotion}</span>
+            {isStrainEmotion && (
+              <span className="text-[10px] uppercase tracking-widest text-red-400 font-bold">Strain</span>
+            )}
+          </div>
+        )}
+
+        {/* ── Similarity overlay — bottom centre ── */}
         {isActive && (
           <div className="absolute inset-0 z-20 flex items-end justify-center pb-8 pointer-events-none">
             <div className="bg-slate-900/80 backdrop-blur-sm rounded-2xl px-6 py-3 flex items-center gap-4">
@@ -711,6 +864,47 @@ const PatientCustomExercise: React.FC = () => {
             </>
           )}
         </div>
+
+        {/* ── Posture cue card (sidebar) ── */}
+        {isActive && (
+          <div className={`rounded-xl px-4 py-3 flex items-center gap-3 border transition-all ${postureStatus === "correct"
+            ? "bg-teal-500/10 border-teal-500/30"
+            : "bg-red-500/10 border-red-500/30"
+            }`}>
+            {postureStatus === "correct" ? (
+              <CheckCircle2 size={20} className="text-teal-400 shrink-0" />
+            ) : (
+              <AlertCircle size={20} className="text-red-400 shrink-0" />
+            )}
+            <div>
+              <p className="text-xs uppercase tracking-wide font-bold mb-0.5 text-slate-400">Form</p>
+              <p className={`text-sm font-semibold ${postureStatus === "correct" ? "text-teal-300" : "text-red-300"}`}>
+                {postureStatus === "correct" ? "Posture Correct" : (formCue ?? "Check your form")}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Expression card (sidebar) ── */}
+        {isActive && strainEmotion && (
+          <div className={`rounded-xl px-4 py-3 flex items-center justify-between border transition-all ${isStrainEmotion
+            ? "bg-red-500/10 border-red-500/30"
+            : "bg-slate-800 border-slate-700"
+            }`}>
+            <div>
+              <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-0.5">Expression</p>
+              <p className={`font-semibold capitalize text-sm ${isStrainEmotion ? "text-red-300" : "text-emerald-300"}`}>
+                {strainEmotion}
+              </p>
+              {isStrainEmotion && (
+                <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest mt-0.5">
+                  Strain detected
+                </p>
+              )}
+            </div>
+            <span className="text-3xl">{EMOTION_EMOJI[strainEmotion] ?? "😐"}</span>
+          </div>
+        )}
 
         {/* Status message */}
         {isActive && (
