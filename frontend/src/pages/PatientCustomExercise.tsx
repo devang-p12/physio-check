@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Play, StopCircle, ChevronLeft, Activity, Repeat2, Zap, Expand, CheckCircle2, AlertCircle } from "lucide-react";
+import {
+  Play, StopCircle, ChevronLeft, Activity, Repeat2, Zap, Expand,
+  CheckCircle2, AlertCircle, X, Send, Bot, User, Loader2,
+  TrendingUp, Heart, ChevronRight, Sparkles,
+} from "lucide-react";
 import { Pose, POSE_CONNECTIONS } from "@mediapipe/pose";
 import type { Results } from "@mediapipe/pose";
 import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
@@ -74,7 +78,6 @@ class DTW {
     return mat[n][m] / (n + m);
   }
   static similarity(dist: number): number {
-    // dist=0 -> 100%, dist=0.7 -> 0%. Wider divisor = more tolerant.
     const raw = Math.max(0, 100 * (1 - dist / 0.7));
     return raw > 50 ? Math.min(100, Math.round(raw * 1.1)) : Math.round(raw);
   }
@@ -82,17 +85,13 @@ class DTW {
 
 interface LiveMatchResult { similarity: number; repCount: number; status: string; }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// KEYFRAME MATCHER
-// ─────────────────────────────────────────────────────────────────────────────
-
 class LiveMatcher {
   private template: NormFrame[];
   repCount = 0;
   currentTargetIndex = 0;
   private isCooldown = false;
   private readonly cooldownMs = 1500;
-  private readonly repThreshold = 60;  // lower = more tolerant
+  private readonly repThreshold = 60;
   private buffer: NormFrame[] = [];
 
   constructor(frames: NormFrame[]) {
@@ -112,7 +111,6 @@ class LiveMatcher {
 
   processFrame(frame: NormFrame | null): LiveMatchResult {
     if (!frame) return { similarity: 0, repCount: this.repCount, status: "Detecting body..." };
-
     this.buffer.push(frame);
     if (this.buffer.length > 5) this.buffer.shift();
     const smoothed = this.smooth(frame);
@@ -123,35 +121,29 @@ class LiveMatcher {
     }
 
     const targetFrame = this.template[this.currentTargetIndex];
-
-    // Best-of-buffer: check all recent frames so briefly held poses still count
     let sim = 0;
     for (const bf of [...this.buffer, smoothed]) {
       const s = DTW.similarity(DTW.frameDistance(bf, targetFrame));
       if (s > sim) sim = s;
     }
-    const dist = DTW.frameDistance(smoothed, targetFrame); // for logging only
+    const dist = DTW.frameDistance(smoothed, targetFrame);
     console.log(`[LiveMatcher] Pos ${this.currentTargetIndex + 1}/${this.template.length} | dist=${dist.toFixed(3)} bestSim=${sim.toFixed(0)}% | reps=${this.repCount}`);
 
     let status = `Match Position ${this.currentTargetIndex + 1} of ${this.template.length}`;
     if (sim >= this.repThreshold) {
       this.currentTargetIndex++;
-      console.log(`[LiveMatcher] ✓ Hit keyframe! Now targeting ${this.currentTargetIndex}/${this.template.length}`);
       if (this.currentTargetIndex >= this.template.length) {
         this.repCount++;
         this.currentTargetIndex = 0;
         this.triggerCooldown();
         status = "✓ Rep Logged!";
-        console.log(`[LiveMatcher] ✓✓ REP! Total: ${this.repCount}`);
       } else {
         status = "✓ Hit! Move to next position.";
       }
     } else if (sim > 50) {
       status = "Getting closer...";
     }
-
-    const result = { similarity: sim, repCount: this.repCount, status };
-    return result;
+    return { similarity: sim, repCount: this.repCount, status };
   }
 
   private triggerCooldown() {
@@ -182,76 +174,411 @@ interface Template {
   keyframeTimestamps?: number[];
 }
 
-// ── Posture analysis from raw landmarks ──────────────────────────────────────
-// Returns { status, cue } based on MediaPipe landmark positions.
-// Landmark indices: 11=L-shoulder, 12=R-shoulder, 23=L-hip, 24=R-hip,
-//                  25=L-knee, 26=R-knee, 27=L-ankle, 28=R-ankle
 function analysePosture(lms: any[]): { status: "correct" | "incorrect"; cue: string | null } {
   if (!lms || lms.length < 29) return { status: "correct", cue: null };
-
   const vis = (i: number) => (lms[i]?.visibility ?? 0) > 0.4;
 
-  // ── Shoulder alignment (are shoulders level?) ──
   if (vis(11) && vis(12)) {
-    const shoulderTilt = Math.abs(lms[11].y - lms[12].y);
-    if (shoulderTilt > 0.06) {
+    if (Math.abs(lms[11].y - lms[12].y) > 0.06)
       return { status: "incorrect", cue: "Level your shoulders" };
-    }
   }
-
-  // ── Spine alignment: shoulder midpoint vs hip midpoint ──
   if (vis(11) && vis(12) && vis(23) && vis(24)) {
     const shoulderMidX = (lms[11].x + lms[12].x) / 2;
     const hipMidX = (lms[23].x + lms[24].x) / 2;
-    const lateralLean = Math.abs(shoulderMidX - hipMidX);
-    if (lateralLean > 0.08) {
+    if (Math.abs(shoulderMidX - hipMidX) > 0.08)
       return { status: "incorrect", cue: "Keep your back straight" };
-    }
   }
-
-  // ── Hip drop (one hip significantly lower) ──
   if (vis(23) && vis(24)) {
-    const hipTilt = Math.abs(lms[23].y - lms[24].y);
-    if (hipTilt > 0.06) {
+    if (Math.abs(lms[23].y - lms[24].y) > 0.06)
       return { status: "incorrect", cue: "Keep your hips level" };
-    }
   }
-
-  // ── Knee cave (knees closer together than ankles — for squat-type moves) ──
   if (vis(25) && vis(26) && vis(27) && vis(28)) {
     const kneeWidth = Math.abs(lms[25].x - lms[26].x);
     const ankleWidth = Math.abs(lms[27].x - lms[28].x);
-    if (kneeWidth < ankleWidth * 0.6) {
+    if (kneeWidth < ankleWidth * 0.6)
       return { status: "incorrect", cue: "Push knees outward" };
-    }
   }
-
-  // ── Forward head / neck tilt: nose vs shoulder midpoint ──
   if (vis(0) && vis(11) && vis(12)) {
     const noseX = lms[0].x;
     const shoulderMidX = (lms[11].x + lms[12].x) / 2;
-    if (Math.abs(noseX - shoulderMidX) > 0.1) {
+    if (Math.abs(noseX - shoulderMidX) > 0.1)
       return { status: "incorrect", cue: "Tuck your chin in" };
-    }
   }
-
   return { status: "correct", cue: null };
 }
 
-// ── Emotion constants ────────────────────────────────────────────────────────
 const STRAIN_EMOTIONS = ["angry", "sad", "fearful", "disgusted"];
-
 const EMOTION_EMOJI: Record<string, string> = {
-  happy: "😊",
-  neutral: "😐",
-  surprised: "😮",
-  angry: "😠",
-  sad: "😢",
-  fearful: "😨",
-  disgusted: "🤢",
+  happy: "😊", neutral: "😐", surprised: "😮",
+  angry: "😠", sad: "😢", fearful: "😨", disgusted: "🤢",
 };
 
-// ── Component ────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// POST-SESSION CHATBOT (inline)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface SessionSummary {
+  exerciseName: string;
+  exerciseMode: "workout" | "stretch";
+  reps: number;
+  targetReps: number;
+  formScore: number;
+  holdSecs?: number;
+  bestStretchDist?: number;
+}
+
+interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: Date;
+}
+
+const QUICK_REPLIES = [
+  "How can I improve my form?",
+  "What muscles am I working?",
+  "Does this exercise help with pain relief?",
+  "How often should I do this?",
+  "Am I ready to progress?",
+];
+
+function buildSystemPrompt(summary: SessionSummary, patient: any): string {
+  const patientInfo = patient
+    ? `Patient Details:
+- Name: ${patient.name ?? "Patient"}
+- Age: ${patient.age ?? "Unknown"}
+- Condition/Diagnosis: ${patient.condition ?? patient.diagnosis ?? "Not specified"}
+- Physiotherapist Notes: ${patient.notes ?? "None"}`
+    : "Patient details unavailable.";
+
+  const sessionInfo = summary.exerciseMode === "stretch"
+    ? `Exercise Session Summary:
+- Exercise: ${summary.exerciseName} (Stretch)
+- Best Stretch Range: ${summary.bestStretchDist != null ? Math.round(summary.bestStretchDist * 100) + "%" : "N/A"}
+- Hold Duration: ${summary.holdSecs ?? 0}s
+- Form Score: ${summary.formScore}%`
+    : `Exercise Session Summary:
+- Exercise: ${summary.exerciseName} (Workout)
+- Reps Completed: ${summary.reps} / ${summary.targetReps}
+- Form Score: ${summary.formScore}%
+- Completion Rate: ${Math.round((summary.reps / Math.max(summary.targetReps, 1)) * 100)}%`;
+
+  return `You are PhysioBot, a compassionate and knowledgeable physiotherapy assistant embedded in PhysioCheck, a rehabilitation platform.
+
+${patientInfo}
+
+${sessionInfo}
+
+Your role:
+1. Greet the patient warmly by name and acknowledge their session performance with specific, data-driven feedback.
+2. Celebrate wins (good form score, reps completed) and gently flag areas for improvement without discouraging them.
+3. Provide actionable physiotherapy advice tailored to their condition and exercise.
+4. Answer follow-up questions about their recovery, progression, and exercise technique.
+5. Always remind them to consult their physiotherapist for clinical decisions.
+6. Keep responses concise, warm, and encouraging — never more than 150 words per message unless more detail is explicitly requested.
+7. Use plain language; avoid excessive medical jargon.
+
+Start by giving a personalised post-session recap and encouragement.`;
+}
+
+interface PostSessionChatbotProps {
+  isOpen: boolean;
+  onClose: () => void;
+  sessionSummary: SessionSummary;
+  assignmentId: string;
+}
+
+const PostSessionChatbot: React.FC<PostSessionChatbotProps> = ({
+  isOpen, onClose, sessionSummary, assignmentId,
+}) => {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [patient, setPatient] = useState<any>(null);
+  const [quickRepliesVisible, setQuickRepliesVisible] = useState(false);
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const hasInitialized = useRef(false);
+
+  // ── Put your Gemini API key in .env as VITE_GEMINI_API_KEY ────────────────
+  const geminiApiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY ?? "";
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  useEffect(() => {
+    if (!isOpen || hasInitialized.current) return;
+    hasInitialized.current = true;
+
+    const init = async () => {
+      setIsLoading(true);
+      const token = localStorage.getItem("token");
+
+      let fetchedPatient = null;
+      try {
+        const res = await fetch("http://localhost:5000/patient/profile", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          fetchedPatient = data.patient ?? data.user ?? data;
+          setPatient(fetchedPatient);
+        }
+      } catch (e) {
+        console.warn("Could not fetch patient profile:", e);
+      }
+
+      const prompt = buildSystemPrompt(sessionSummary, fetchedPatient);
+      setSystemPrompt(prompt);
+
+      try {
+        const openingMsg = await callGemini(prompt, [], "Hello! Please give me my post-session recap.", geminiApiKey);
+        setMessages([{ role: "assistant", content: openingMsg, timestamp: new Date() }]);
+      } catch (e) {
+        const fallback = sessionSummary.exerciseMode === "stretch"
+          ? `Great work on your ${sessionSummary.exerciseName} stretch! You held for ${sessionSummary.holdSecs ?? 0}s with a ${sessionSummary.formScore}% form score. Feel free to ask me anything about your recovery!`
+          : `Great work completing your ${sessionSummary.exerciseName} session! You completed ${sessionSummary.reps} reps with a ${sessionSummary.formScore}% form score. Feel free to ask me any questions about your recovery!`;
+        setMessages([{ role: "assistant", content: fallback, timestamp: new Date() }]);
+      }
+      setQuickRepliesVisible(true);
+      setIsLoading(false);
+    };
+    init();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      hasInitialized.current = false;
+      setMessages([]);
+      setQuickRepliesVisible(false);
+      setInput("");
+    }
+  }, [isOpen]);
+
+  const sendMessage = useCallback(async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || isLoading) return;
+    setQuickRepliesVisible(false);
+    const userMsg: ChatMessage = { role: "user", content: trimmed, timestamp: new Date() };
+    setMessages(prev => [...prev, userMsg]);
+    setInput("");
+    setIsLoading(true);
+    try {
+      const reply = await callGemini(systemPrompt, messages, trimmed, geminiApiKey);
+      setMessages(prev => [...prev, { role: "assistant", content: reply, timestamp: new Date() }]);
+    } catch {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: "Sorry, I had trouble connecting. Please check your internet and try again.",
+        timestamp: new Date(),
+      }]);
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [isLoading, messages, systemPrompt, geminiApiKey]);
+
+  if (!isOpen) return null;
+
+  const completionPct = Math.round((sessionSummary.reps / Math.max(sessionSummary.targetReps, 1)) * 100);
+  const formGrade =
+    sessionSummary.formScore >= 80 ? { label: "Excellent", color: "text-emerald-400", bg: "bg-emerald-500/15 border-emerald-500/30" } :
+    sessionSummary.formScore >= 60 ? { label: "Good", color: "text-teal-400", bg: "bg-teal-500/15 border-teal-500/30" } :
+    sessionSummary.formScore >= 40 ? { label: "Fair", color: "text-yellow-400", bg: "bg-yellow-500/15 border-yellow-500/30" } :
+                                     { label: "Keep Trying", color: "text-slate-400", bg: "bg-slate-700/50 border-slate-600" };
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-300"
+        onClick={onClose}
+      />
+
+      {/* Modal */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div
+          className="w-full max-w-lg h-[90vh] max-h-[760px] flex flex-col rounded-3xl overflow-hidden shadow-2xl border border-slate-700/80"
+          style={{ background: "linear-gradient(160deg, #0f172a 0%, #1e293b 50%, #0f1a2e 100%)" }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="shrink-0 px-5 pt-5 pb-4 border-b border-slate-700/60">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-teal-500/30">
+                  <Bot size={18} className="text-white" />
+                </div>
+                <div>
+                  <h2 className="text-white font-extrabold text-base leading-none">PhysioBot</h2>
+                  <p className="text-teal-400 text-[11px] font-medium mt-0.5 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 bg-teal-400 rounded-full animate-pulse" />
+                    AI Recovery Assistant
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={onClose}
+                className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-700/60 hover:bg-slate-600 text-slate-400 hover:text-white transition"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Session summary chips */}
+            <div className="flex flex-wrap gap-2">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-700/50 border border-slate-600/50">
+                <Activity size={13} className="text-teal-400" />
+                <span className="text-white text-xs font-semibold">{sessionSummary.exerciseName}</span>
+              </div>
+              {sessionSummary.exerciseMode === "workout" ? (
+                <>
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-700/50 border border-slate-600/50">
+                    <TrendingUp size={13} className="text-violet-400" />
+                    <span className="text-white text-xs font-semibold">
+                      {sessionSummary.reps}/{sessionSummary.targetReps} reps
+                    </span>
+                    <span className={`text-[10px] font-bold ${completionPct >= 100 ? "text-emerald-400" : "text-slate-400"}`}>
+                      ({completionPct}%)
+                    </span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border ${formGrade.bg}`}>
+                    <Sparkles size={13} className={formGrade.color} />
+                    <span className={`text-xs font-bold ${formGrade.color}`}>
+                      Form: {sessionSummary.formScore}% — {formGrade.label}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-500/15 border border-violet-500/30">
+                    <Heart size={13} className="text-violet-400" />
+                    <span className="text-violet-300 text-xs font-semibold">Hold: {sessionSummary.holdSecs ?? 0}s</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-fuchsia-500/15 border border-fuchsia-500/30">
+                    <TrendingUp size={13} className="text-fuchsia-400" />
+                    <span className="text-fuchsia-300 text-xs font-semibold">
+                      Range: {sessionSummary.bestStretchDist != null ? Math.round(sessionSummary.bestStretchDist * 100) + "%" : "N/A"}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+            {messages.map((msg, i) => (
+              <div key={i} className={`flex items-start gap-3 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
+                <div className={`shrink-0 w-7 h-7 rounded-xl flex items-center justify-center ${
+                  msg.role === "assistant"
+                    ? "bg-gradient-to-br from-teal-500 to-emerald-600 shadow-md shadow-teal-500/30"
+                    : "bg-slate-600"
+                }`}>
+                  {msg.role === "assistant" ? <Bot size={14} className="text-white" /> : <User size={14} className="text-white" />}
+                </div>
+                <div className={`max-w-[82%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+                  msg.role === "assistant"
+                    ? "bg-slate-700/60 border border-slate-600/50 text-slate-100 rounded-tl-sm"
+                    : "bg-teal-500 text-white rounded-tr-sm shadow-md shadow-teal-500/20"
+                }`}>
+                  {msg.content}
+                </div>
+              </div>
+            ))}
+
+            {isLoading && (
+              <div className="flex items-start gap-3">
+                <div className="shrink-0 w-7 h-7 rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center">
+                  <Bot size={14} className="text-white" />
+                </div>
+                <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-slate-700/60 border border-slate-600/50 flex items-center gap-1.5">
+                  <span className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <span className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <span className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Quick replies */}
+          {quickRepliesVisible && !isLoading && (
+            <div className="shrink-0 px-4 pb-2">
+              <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-2">Suggested Questions</p>
+              <div className="flex flex-wrap gap-2">
+                {QUICK_REPLIES.map(qr => (
+                  <button
+                    key={qr}
+                    onClick={() => sendMessage(qr)}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-slate-700/70 border border-slate-600 hover:border-teal-500/60 hover:bg-slate-600/70 text-slate-300 hover:text-white text-xs font-medium transition-all"
+                  >
+                    <ChevronRight size={11} className="text-teal-400" />
+                    {qr}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Input */}
+          <div className="shrink-0 px-4 py-4 border-t border-slate-700/60">
+            <div className="flex items-center gap-3 bg-slate-700/50 border border-slate-600/60 rounded-2xl px-4 py-2.5 focus-within:border-teal-500/50 focus-within:bg-slate-700/70 transition">
+              <input
+                ref={inputRef}
+                type="text"
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && !e.shiftKey && sendMessage(input)}
+                placeholder="Ask about your recovery..."
+                className="flex-1 bg-transparent text-white text-sm placeholder-slate-500 outline-none"
+                disabled={isLoading}
+              />
+              <button
+                onClick={() => sendMessage(input)}
+                disabled={!input.trim() || isLoading}
+                className="w-8 h-8 flex items-center justify-center rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all active:scale-95 shadow-md shadow-teal-500/30"
+              >
+                {isLoading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+              </button>
+            </div>
+            <p className="text-center text-[10px] text-slate-600 mt-2">
+              Powered by Gemini · Not a substitute for professional advice
+            </p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
+// ── Standalone Gemini API helper (outside component to avoid recreation) ──────
+async function callGemini(sysPrompt, history, userMessage) {
+  // ... contents building stays the same ...
+
+  const token = localStorage.getItem("token");
+  const res = await fetch("http://localhost:5000/api/gemini/chat", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ contents }),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(JSON.stringify(errData)); // pass full error to catch block
+  }
+
+  const data = await res.json();
+  return data.text;
+}
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════
+
 const PatientCustomExercise: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -259,7 +586,7 @@ const PatientCustomExercise: React.FC = () => {
 
   const [assignment, setAssignment] = useState<any>(null);
   const [template, setTemplate] = useState<Template | null>(null);
-  const templateRef = useRef<Template | null>(null);  // accessible inside initPose closure
+  const templateRef = useRef<Template | null>(null);
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -270,22 +597,26 @@ const PatientCustomExercise: React.FC = () => {
   const [repCount, setRepCount] = useState(0);
 
   // Stretch phase 2 state
-  const [stretchDist, setStretchDist] = useState(0);       // normalised distance between lm1 & lm2
+  const [stretchDist, setStretchDist] = useState(0);
   const [bestStretchDist, setBestStretchDist] = useState<number | null>(null);
   const [holdSecs, setHoldSecs] = useState(0);
   const holdTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const isPhase2Ref = useRef(false);  // mutable mirror for onResults closure
+  const isPhase2Ref = useRef(false);
 
-  // ── Posture state (mirrors ExerciseSession) ───────────────────────────────
+  // Posture state
   const [postureStatus, setPostureStatus] = useState<"correct" | "incorrect">("correct");
   const [formCue, setFormCue] = useState<string | null>(null);
 
-  // ── Emotion state ─────────────────────────────────────────────────────────
+  // Emotion state
   const [strainEmotion, setStrainEmotion] = useState<string | null>(null);
 
-  // ── Form Score Tracking ───────────────────────────────────────────────────
+  // Form Score Tracking
   const similaritySumRef = useRef(0);
   const similarityCountRef = useRef(0);
+
+  // ── Chatbot state ─────────────────────────────────────────────────────────
+  const [chatbotOpen, setChatbotOpen] = useState(false);
+  const [lastSessionSummary, setLastSessionSummary] = useState<SessionSummary | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -299,7 +630,6 @@ const PatientCustomExercise: React.FC = () => {
   const refVideoRef = useRef<HTMLVideoElement>(null);
   const [currentTargetIdx, setCurrentTargetIdx] = useState(0);
 
-  // ── Emotion / audio refs ──────────────────────────────────────────────────
   const emotionModelLoaded = useRef(false);
   const lastAudioTimeRef = useRef(0);
   const frameCounterRef = useRef(0);
@@ -334,26 +664,18 @@ const PatientCustomExercise: React.FC = () => {
         setTemplate(tmplData.template);
         templateRef.current = tmplData.template;
 
-        // 3. Deserialise frames and init LiveMatcher
-        // Handle both formats:
-        //   Correct:  frames[keyframeIdx][landmarkIdx] = [x,y,z,v]   (shape: N x M x 4)
-        //   Legacy buggy: frames[0][keyframeIdx][landmarkIdx] = [x,y,z,v]  (shape: 1 x N x M x 4)
         let rawFrames: number[][][] = tmplData.template.frames;
-        // Detect the extra nesting: if frames.length===1 and frames[0][0][0] is an array (not a number)
         if (
           rawFrames.length === 1 &&
           Array.isArray(rawFrames[0]) &&
           Array.isArray(rawFrames[0][0]) &&
           Array.isArray((rawFrames[0][0] as unknown as number[][])[0])
         ) {
-          console.log("[PatientCustomExercise] Detected legacy nested frames format — unwrapping outer array");
           rawFrames = rawFrames[0] as unknown as number[][][];
         }
-        console.log("[PatientCustomExercise] Template frames count:", rawFrames.length, "landmarks per frame:", rawFrames[0]?.length);
         const normFrames: NormFrame[] = rawFrames.map((f: number[][]) =>
           f.map(([x, y, z, v]) => ({ x, y, z, visibility: v ?? 1 }))
         );
-        console.log("[PatientCustomExercise] normFrames deserialized. Count:", normFrames.length);
         templateFramesRef.current = normFrames;
         matcherRef.current = new LiveMatcher(normFrames);
       } catch (e: any) {
@@ -372,7 +694,6 @@ const PatientCustomExercise: React.FC = () => {
         await faceapi.nets.tinyFaceDetector.loadFromUri("/models");
         await faceapi.nets.faceExpressionNet.loadFromUri("/models");
         emotionModelLoaded.current = true;
-        console.log("Emotion models loaded");
       } catch (err) {
         console.error("Emotion model load failed", err);
       }
@@ -380,19 +701,16 @@ const PatientCustomExercise: React.FC = () => {
     loadEmotionModels();
   }, []);
 
-  // ── Timer removed (unused) ────────────────────────────────────────────────
-
   // ── Audio warning ─────────────────────────────────────────────────────────
   const triggerAudioWarning = useCallback(() => {
     const now = Date.now();
     if (now - lastAudioTimeRef.current < 8000) return;
     lastAudioTimeRef.current = now;
-    const msg = new SpeechSynthesisUtterance(
-      "Please do not pressure yourself. Take it slow."
-    );
+    const msg = new SpeechSynthesisUtterance("Please do not pressure yourself. Take it slow.");
     msg.rate = 0.9; msg.pitch = 1; msg.volume = 1;
     window.speechSynthesis.speak(msg);
   }, []);
+
   const initPose = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current || !templateRef.current) return;
     const canvas = canvasRef.current;
@@ -406,8 +724,6 @@ const PatientCustomExercise: React.FC = () => {
 
     let hands: Hands | null = null;
     let pose: Pose | null = null;
-
-    // We need a way to combine landmarks for stretch phase 2
     let latestPoseLms: any[] | null = null;
     let latestHandLms: any[] | null = null;
 
@@ -415,9 +731,7 @@ const PatientCustomExercise: React.FC = () => {
       if (!isPhase2Ref.current) return;
       const sc = templateRef.current?.stretchConfig;
       if (!sc) return;
-
       const sourceLms = isPalm ? latestHandLms : latestPoseLms;
-
       if (sourceLms && sourceLms[sc.lm1] && sourceLms[sc.lm2]) {
         const p1 = sourceLms[sc.lm1], p2 = sourceLms[sc.lm2];
         const dist = Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
@@ -429,8 +743,6 @@ const PatientCustomExercise: React.FC = () => {
         );
         const progress = sc.direction === "inward" ? Math.max(0, 1 - dist / 0.4) : Math.min(1, dist / 0.4);
         setStatus(`Stretch ${Math.round(progress * 100)}% — ${sc.direction === "inward" ? "bring closer" : "spread apart"}`);
-
-        // Highlight
         [sc.lm1, sc.lm2].forEach(idx => {
           const lm = sourceLms[idx];
           if (!lm) return;
@@ -447,18 +759,15 @@ const PatientCustomExercise: React.FC = () => {
 
     const handlePoseResults = (results: Results) => {
       if (results.poseLandmarks) {
-        latestPoseLms = results.poseLandmarks as any[] | null;
-        // ── DTW match ──
+        latestPoseLms = results.poseLandmarks as any[];
         const norm = PoseNormalizer.normalize(results.poseLandmarks as any);
         if (norm && matcherRef.current && (!runHands || !isPalm)) {
           const res = matcherRef.current.processFrame(norm);
           matchSimilarityRef.current = res.similarity;
-
           if (res.similarity > 0) {
             similaritySumRef.current += res.similarity;
             similarityCountRef.current += 1;
           }
-
           setSimilarity(res.similarity);
           setStatus(res.status);
           setCurrentTargetIdx(matcherRef.current.currentTargetIndex);
@@ -480,7 +789,6 @@ const PatientCustomExercise: React.FC = () => {
           drawLandmarks(ctx, results.poseLandmarks, { color: "#ffffff", lineWidth: 1, radius: 3 });
         }
 
-        // ── Posture analysis ──
         const posture = analysePosture(results.poseLandmarks as any);
         setPostureStatus(posture.status);
         setFormCue(posture.cue);
@@ -513,12 +821,10 @@ const PatientCustomExercise: React.FC = () => {
             const norm = HandNormalizer.normalize(r.multiHandLandmarks[0]);
             if (norm && matcherRef.current && !isPhase2Ref.current) {
               const res = matcherRef.current.processFrame(norm);
-
               if (res.similarity > 0) {
                 similaritySumRef.current += res.similarity;
                 similarityCountRef.current += 1;
               }
-
               setSimilarity(res.similarity); setStatus(res.status);
               setCurrentTargetIdx(matcherRef.current.currentTargetIndex);
               if (res.repCount > repCount) { setRepCount(res.repCount); dingAudio.currentTime = 0; dingAudio.play().catch(() => { }); }
@@ -555,13 +861,15 @@ const PatientCustomExercise: React.FC = () => {
           if (hands) promises.push(hands.send({ image: videoRef.current }));
           await Promise.all(promises);
 
-          // ── Emotion detection every 10 frames ──
           frameCounterRef.current++;
           if (emotionModelLoaded.current && frameCounterRef.current % 10 === 0 && isActiveRef.current) {
             try {
-              const detection = await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions()).withFaceExpressions();
+              const detection = await faceapi
+                .detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions())
+                .withFaceExpressions();
               if (detection?.expressions) {
-                const dominantEmotion = Object.entries(detection.expressions as any).sort((a: any, b: any) => (b[1] as number) - (a[1] as number))[0][0];
+                const dominantEmotion = Object.entries(detection.expressions as any)
+                  .sort((a: any, b: any) => (b[1] as number) - (a[1] as number))[0][0];
                 setStrainEmotion(dominantEmotion);
                 const { angry, sad, fearful } = detection.expressions as any;
                 const strainScore = (angry ?? 0) + (sad ?? 0) + (fearful ?? 0);
@@ -606,6 +914,7 @@ const PatientCustomExercise: React.FC = () => {
     }
   };
 
+  // ── UPDATED stopLive — opens PhysioBot instead of alert ──────────────────
   const stopLive = async () => {
     if (!sessionId) return;
     const token = localStorage.getItem("token");
@@ -630,22 +939,33 @@ const PatientCustomExercise: React.FC = () => {
       await fetch("http://localhost:5000/session/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          sessionId,
-          reps: repCount,
-          formScore: averageSimilarity
-        }),
+        body: JSON.stringify({ sessionId, reps: repCount, formScore: averageSimilarity }),
       });
     } catch (e) {
       console.error("Failed to complete session", e);
     }
 
+    // Build summary for PhysioBot
     const isStretch = template?.exerciseMode === "stretch";
-    alert(
-      isStretch
-        ? `Session complete!\n\nBest stretch: ${bestStretchDist !== null ? (bestStretchDist * 100).toFixed(0) + "% range" : "N/A"}\nHold time: ${holdSecs}s`
-        : `Session complete!\n\nReps: ${repCount}\nForm Score: ${averageSimilarity}%`
-    );
+    const prescription = assignment?.prescription ?? { sets: 3, repsPerSet: 10 };
+    const targetReps = (prescription.sets ?? 3) * (prescription.repsPerSet ?? 10);
+
+    setLastSessionSummary({
+      exerciseName: template?.name ?? "Exercise",
+      exerciseMode: template?.exerciseMode ?? "workout",
+      reps: repCount,
+      targetReps,
+      formScore: averageSimilarity,
+      holdSecs: isStretch ? holdSecs : undefined,
+      bestStretchDist: isStretch ? (bestStretchDist ?? undefined) : undefined,
+    });
+
+    // Open PhysioBot chatbot
+    setChatbotOpen(true);
+  };
+
+  const handleChatbotClose = () => {
+    setChatbotOpen(false);
     navigate("/patient");
   };
 
@@ -653,9 +973,6 @@ const PatientCustomExercise: React.FC = () => {
   const simColour = (s: number) =>
     s >= 75 ? "text-emerald-400" : s >= 45 ? "text-yellow-400" : "text-slate-400";
   const isStrainEmotion = strainEmotion ? STRAIN_EMOTIONS.includes(strainEmotion) : false;
-
-  // ── Video sync removed to allow continuous playback ──────────────────────────
-  // The user requested a "normal video" experience.
 
   // ── Render ────────────────────────────────────────────────────────────────
   if (loadingData) {
@@ -681,298 +998,259 @@ const PatientCustomExercise: React.FC = () => {
   const targetReps = (prescription.sets ?? 3) * (prescription.repsPerSet ?? 10);
 
   return (
-    <div className="h-screen bg-slate-900 flex flex-col md:flex-row overflow-hidden font-sans">
-      {/* ── CAMERA AREA ───────────────────────────────────────────────────── */}
-      <div className="flex-1 relative bg-black overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-slate-900/40 to-transparent z-10 pointer-events-none" />
+    <>
+      <div className="h-screen bg-slate-900 flex flex-col md:flex-row overflow-hidden font-sans">
+        {/* ── CAMERA AREA ─────────────────────────────────────────────────── */}
+        <div className="flex-1 relative bg-black overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-900/40 to-transparent z-10 pointer-events-none" />
 
-        <video
-          ref={videoRef}
-          className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
-          playsInline muted autoPlay
-        />
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 w-full h-full object-cover scale-x-[-1] z-10 pointer-events-none"
-        />
+          <video
+            ref={videoRef}
+            className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
+            playsInline muted autoPlay
+          />
+          <canvas
+            ref={canvasRef}
+            className="absolute inset-0 w-full h-full object-cover scale-x-[-1] z-10 pointer-events-none"
+          />
 
-        {/* Back button */}
-        <button
-          onClick={() => { stopLive(); navigate("/patient"); }}
-          className="absolute top-4 left-4 z-20 flex items-center gap-1.5 px-3 py-2 bg-slate-800/80 hover:bg-slate-700 text-white rounded-xl text-sm font-medium transition"
-        >
-          <ChevronLeft size={16} /> Dashboard
-        </button>
+          {/* Back button */}
+          <button
+            onClick={() => navigate("/patient")}
+            className="absolute top-4 left-4 z-20 flex items-center gap-1.5 px-3 py-2 bg-slate-800/80 hover:bg-slate-700 text-white rounded-xl text-sm font-medium transition"
+          >
+            <ChevronLeft size={16} /> Dashboard
+          </button>
 
-        {/* ── Posture / form cue overlay — top centre (same as ExerciseSession) ── */}
-        {isActive && (
-          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20">
-            <div className={`flex items-center gap-3 px-6 py-3 rounded-full backdrop-blur-md border shadow-2xl transition-all duration-300 ${postureStatus === "correct"
-              ? "bg-teal-500/20 border-teal-400/50 text-teal-300"
-              : "bg-red-500/20 border-red-400/50 text-red-300"
+          {/* Posture overlay */}
+          {isActive && (
+            <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20">
+              <div className={`flex items-center gap-3 px-6 py-3 rounded-full backdrop-blur-md border shadow-2xl transition-all duration-300 ${
+                postureStatus === "correct"
+                  ? "bg-teal-500/20 border-teal-400/50 text-teal-300"
+                  : "bg-red-500/20 border-red-400/50 text-red-300"
               }`}>
-              {postureStatus === "correct" ? (
-                <>
-                  <CheckCircle2 size={22} fill="currentColor" />
-                  <span className="font-bold tracking-wide">Posture Correct</span>
-                </>
-              ) : (
-                <>
-                  <AlertCircle size={22} fill="currentColor" />
-                  <span className="font-bold tracking-wide uppercase">
-                    {formCue ?? "Check your form"}
-                  </span>
-                </>
-              )}
+                {postureStatus === "correct" ? (
+                  <><CheckCircle2 size={22} fill="currentColor" /><span className="font-bold tracking-wide">Posture Correct</span></>
+                ) : (
+                  <><AlertCircle size={22} fill="currentColor" /><span className="font-bold tracking-wide uppercase">{formCue ?? "Check your form"}</span></>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* ── Emotion badge — top-right ── */}
-        {isActive && strainEmotion && (
-          <div className={`absolute top-4 right-4 z-20 flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold backdrop-blur-sm border transition-all ${isStrainEmotion
-            ? "bg-red-500/20 border-red-500/40 text-red-300"
-            : "bg-slate-800/80 border-slate-700 text-slate-300"
+          {/* Emotion badge */}
+          {isActive && strainEmotion && (
+            <div className={`absolute top-4 right-4 z-20 flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold backdrop-blur-sm border transition-all ${
+              isStrainEmotion
+                ? "bg-red-500/20 border-red-500/40 text-red-300"
+                : "bg-slate-800/80 border-slate-700 text-slate-300"
             }`}>
-            <span className="text-lg leading-none">{EMOTION_EMOJI[strainEmotion] ?? "😐"}</span>
-            <span className="capitalize">{strainEmotion}</span>
-            {isStrainEmotion && (
-              <span className="text-[10px] uppercase tracking-widest text-red-400 font-bold">Strain</span>
-            )}
-          </div>
-        )}
+              <span className="text-lg leading-none">{EMOTION_EMOJI[strainEmotion] ?? "😐"}</span>
+              <span className="capitalize">{strainEmotion}</span>
+              {isStrainEmotion && <span className="text-[10px] uppercase tracking-widest text-red-400 font-bold">Strain</span>}
+            </div>
+          )}
 
-        {/* ── Similarity overlay — bottom centre ── */}
-        {isActive && (
-          <div className="absolute inset-0 z-20 flex items-end justify-center pb-8 pointer-events-none">
-            <div className="bg-slate-900/80 backdrop-blur-sm rounded-2xl px-6 py-3 flex items-center gap-4">
-              <div className={`text-4xl font-black ${simColour(similarity)}`}>
-                {similarity}%
-              </div>
-              <div className="border-l border-slate-600 pl-4">
-                <p className="text-white font-semibold text-sm leading-tight">{status}</p>
-                <p className="text-slate-400 text-xs mt-0.5">Match Score</p>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ── SIDE PANEL ────────────────────────────────────────────────────── */}
-      <div className="w-full md:w-[400px] bg-slate-800 border-l border-slate-700 flex flex-col overflow-y-auto">
-        {/* Reference Video */}
-        {template?.videoUrl ? (
-          <div className="p-4 border-b border-slate-700 bg-slate-900/50">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] font-bold text-teal-400 uppercase tracking-widest">Reference Performance</p>
-              <div className="flex items-center gap-1.5 px-2 py-0.5 bg-teal-500/20 text-teal-400 rounded-full text-[9px] font-black uppercase">
-                <span className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-pulse" /> Looping Demo
+          {/* Similarity overlay */}
+          {isActive && (
+            <div className="absolute inset-0 z-20 flex items-end justify-center pb-8 pointer-events-none">
+              <div className="bg-slate-900/80 backdrop-blur-sm rounded-2xl px-6 py-3 flex items-center gap-4">
+                <div className={`text-4xl font-black ${simColour(similarity)}`}>{similarity}%</div>
+                <div className="border-l border-slate-600 pl-4">
+                  <p className="text-white font-semibold text-sm leading-tight">{status}</p>
+                  <p className="text-slate-400 text-xs mt-0.5">Match Score</p>
+                </div>
               </div>
             </div>
-            <div className="relative group">
-              <video
-                ref={refVideoRef}
-                src={template.videoUrl.startsWith('http') ? template.videoUrl : `http://localhost:5000${template.videoUrl}`}
-                className="w-full aspect-video rounded-xl bg-black shadow-2xl border border-slate-700"
-                muted
-                playsInline
-                autoPlay
-                loop
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3 pointer-events-none">
-                <p className="text-white text-[10px] font-bold uppercase tracking-wider">Example Repetition</p>
-              </div>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
-                <p className="text-slate-500 text-[9px] font-bold uppercase mb-0.5">Target Pos</p>
-                <p className="text-white font-black text-sm">{currentTargetIdx + 1} / {template.frameCount}</p>
-              </div>
-              <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
-                <p className="text-slate-500 text-[9px] font-bold uppercase mb-0.5">Video Sync</p>
-                <p className="text-teal-400 font-black text-sm">{template.keyframeTimestamps?.[currentTargetIdx]?.toFixed(1)}s</p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="p-8 text-center space-y-3 border-b border-slate-700">
-            <div className="w-12 h-12 bg-slate-700 rounded-2xl flex items-center justify-center mx-auto mb-4 opacity-50">
-              <Activity size={24} className="text-slate-500" />
-            </div>
-            <p className="text-slate-400 text-sm font-medium">No reference video available for this exercise.</p>
-          </div>
-        )}
-
-        <div className="p-6 border-b border-slate-700">
-          <div className="flex items-center gap-2 mb-1">
-            <Activity size={18} className="text-teal-400" />
-            <span className="text-xs font-bold uppercase tracking-widest text-teal-400">Custom Exercise</span>
-          </div>
-          <h1 className="text-xl font-extrabold text-white leading-tight">
-            {template?.name ?? "Exercise"}
-          </h1>
-          {template?.description && (
-            <p className="text-slate-400 text-sm mt-1">{template.description}</p>
           )}
         </div>
 
-        {/* Prescription */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-slate-800 rounded-xl p-3 text-center">
-            <p className="text-2xl font-black text-white">{prescription.sets}</p>
-            <p className="text-[11px] text-slate-400 uppercase tracking-wide font-medium">Sets</p>
-          </div>
-          <div className="bg-slate-800 rounded-xl p-3 text-center">
-            <p className="text-2xl font-black text-white">{prescription.repsPerSet}</p>
-            <p className="text-[11px] text-slate-400 uppercase tracking-wide font-medium">Reps / Set</p>
-          </div>
-        </div>
-
-        {/* Live stats */}
-        <div className="bg-slate-800 rounded-2xl p-4 space-y-3">
-          {template?.exerciseMode === "stretch" ? (
-            <>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-slate-400 text-sm">
-                  <Expand size={16} />
-                  <span>Best Stretch</span>
+        {/* ── SIDE PANEL ──────────────────────────────────────────────────── */}
+        <div className="w-full md:w-[400px] bg-slate-800 border-l border-slate-700 flex flex-col overflow-y-auto">
+          {/* Reference Video */}
+          {template?.videoUrl ? (
+            <div className="p-4 border-b border-slate-700 bg-slate-900/50">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-bold text-teal-400 uppercase tracking-widest">Reference Performance</p>
+                <div className="flex items-center gap-1.5 px-2 py-0.5 bg-teal-500/20 text-teal-400 rounded-full text-[9px] font-black uppercase">
+                  <span className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-pulse" /> Looping Demo
                 </div>
-                <span className={`font-black text-xl ${bestStretchDist !== null ? "text-violet-400" : "text-slate-500"}`}>
-                  {bestStretchDist !== null ? `${(bestStretchDist * 100).toFixed(0)}%` : "--"}
-                </span>
               </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-slate-400 text-sm">
-                  <Activity size={16} />
-                  <span>Hold Time</span>
-                </div>
-                <span className="font-black text-xl text-teal-400">
-                  {holdSecs}s
-                </span>
-              </div>
-              {/* Progress bar for stretch */}
-              <div className="w-full bg-slate-700 rounded-full h-2">
-                <div
-                  className="h-2 rounded-full transition-all duration-300 bg-gradient-to-r from-violet-500 to-fuchsia-400"
-                  style={{ width: `${Math.min(100, Math.max(0, stretchDist * 100))}%` }}
+              <div className="relative group">
+                <video
+                  ref={refVideoRef}
+                  src={template.videoUrl.startsWith("http") ? template.videoUrl : `http://localhost:5000${template.videoUrl}`}
+                  className="w-full aspect-video rounded-xl bg-black shadow-2xl border border-slate-700"
+                  muted playsInline autoPlay loop
                 />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3 pointer-events-none">
+                  <p className="text-white text-[10px] font-bold uppercase tracking-wider">Example Repetition</p>
+                </div>
               </div>
-            </>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
+                  <p className="text-slate-500 text-[9px] font-bold uppercase mb-0.5">Target Pos</p>
+                  <p className="text-white font-black text-sm">{currentTargetIdx + 1} / {template.frameCount}</p>
+                </div>
+                <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
+                  <p className="text-slate-500 text-[9px] font-bold uppercase mb-0.5">Video Sync</p>
+                  <p className="text-teal-400 font-black text-sm">{template.keyframeTimestamps?.[currentTargetIdx]?.toFixed(1)}s</p>
+                </div>
+              </div>
+            </div>
           ) : (
-            <>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-slate-400 text-sm">
-                  <Repeat2 size={16} />
-                  <span>Reps Done</span>
-                </div>
-                <span className="text-white font-black text-xl">
-                  {repCount}
-                  <span className="text-slate-500 font-normal text-sm"> / {targetReps}</span>
-                </span>
+            <div className="p-8 text-center space-y-3 border-b border-slate-700">
+              <div className="w-12 h-12 bg-slate-700 rounded-2xl flex items-center justify-center mx-auto mb-4 opacity-50">
+                <Activity size={24} className="text-slate-500" />
               </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-slate-400 text-sm">
-                  <Zap size={16} />
-                  <span>Match</span>
-                </div>
-                <span className={`font-black text-xl ${simColour(similarity)}`}>
-                  {similarity}%
-                </span>
-              </div>
-
-              {/* Progress bar for reps */}
-              <div className="w-full bg-slate-700 rounded-full h-2">
-                <div
-                  className="h-2 rounded-full transition-all duration-300 bg-gradient-to-r from-teal-500 to-emerald-400"
-                  style={{ width: `${Math.min(100, (repCount / Math.max(targetReps, 1)) * 100)}%` }}
-                />
-              </div>
-            </>
+              <p className="text-slate-400 text-sm font-medium">No reference video available for this exercise.</p>
+            </div>
           )}
-        </div>
 
-        {/* ── Posture cue card (sidebar) ── */}
-        {isActive && (
-          <div className={`rounded-xl px-4 py-3 flex items-center gap-3 border transition-all ${postureStatus === "correct"
-            ? "bg-teal-500/10 border-teal-500/30"
-            : "bg-red-500/10 border-red-500/30"
-            }`}>
-            {postureStatus === "correct" ? (
-              <CheckCircle2 size={20} className="text-teal-400 shrink-0" />
+          <div className="p-6 border-b border-slate-700">
+            <div className="flex items-center gap-2 mb-1">
+              <Activity size={18} className="text-teal-400" />
+              <span className="text-xs font-bold uppercase tracking-widest text-teal-400">Custom Exercise</span>
+            </div>
+            <h1 className="text-xl font-extrabold text-white leading-tight">{template?.name ?? "Exercise"}</h1>
+            {template?.description && <p className="text-slate-400 text-sm mt-1">{template.description}</p>}
+          </div>
+
+          {/* Prescription */}
+          <div className="grid grid-cols-2 gap-3 p-4">
+            <div className="bg-slate-700/50 rounded-xl p-3 text-center">
+              <p className="text-2xl font-black text-white">{prescription.sets}</p>
+              <p className="text-[11px] text-slate-400 uppercase tracking-wide font-medium">Sets</p>
+            </div>
+            <div className="bg-slate-700/50 rounded-xl p-3 text-center">
+              <p className="text-2xl font-black text-white">{prescription.repsPerSet}</p>
+              <p className="text-[11px] text-slate-400 uppercase tracking-wide font-medium">Reps / Set</p>
+            </div>
+          </div>
+
+          {/* Live stats */}
+          <div className="mx-4 bg-slate-700/30 rounded-2xl p-4 space-y-3">
+            {template?.exerciseMode === "stretch" ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-slate-400 text-sm"><Expand size={16} /><span>Best Stretch</span></div>
+                  <span className={`font-black text-xl ${bestStretchDist !== null ? "text-violet-400" : "text-slate-500"}`}>
+                    {bestStretchDist !== null ? `${(bestStretchDist * 100).toFixed(0)}%` : "--"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-slate-400 text-sm"><Activity size={16} /><span>Hold Time</span></div>
+                  <span className="font-black text-xl text-teal-400">{holdSecs}s</span>
+                </div>
+                <div className="w-full bg-slate-700 rounded-full h-2">
+                  <div className="h-2 rounded-full transition-all duration-300 bg-gradient-to-r from-violet-500 to-fuchsia-400"
+                    style={{ width: `${Math.min(100, Math.max(0, stretchDist * 100))}%` }} />
+                </div>
+              </>
             ) : (
-              <AlertCircle size={20} className="text-red-400 shrink-0" />
+              <>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-slate-400 text-sm"><Repeat2 size={16} /><span>Reps Done</span></div>
+                  <span className="text-white font-black text-xl">
+                    {repCount}<span className="text-slate-500 font-normal text-sm"> / {targetReps}</span>
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-slate-400 text-sm"><Zap size={16} /><span>Match</span></div>
+                  <span className={`font-black text-xl ${simColour(similarity)}`}>{similarity}%</span>
+                </div>
+                <div className="w-full bg-slate-700 rounded-full h-2">
+                  <div className="h-2 rounded-full transition-all duration-300 bg-gradient-to-r from-teal-500 to-emerald-400"
+                    style={{ width: `${Math.min(100, (repCount / Math.max(targetReps, 1)) * 100)}%` }} />
+                </div>
+              </>
             )}
-            <div>
-              <p className="text-xs uppercase tracking-wide font-bold mb-0.5 text-slate-400">Form</p>
-              <p className={`text-sm font-semibold ${postureStatus === "correct" ? "text-teal-300" : "text-red-300"}`}>
-                {postureStatus === "correct" ? "Posture Correct" : (formCue ?? "Check your form")}
-              </p>
-            </div>
           </div>
-        )}
 
-        {/* ── Expression card (sidebar) ── */}
-        {isActive && strainEmotion && (
-          <div className={`rounded-xl px-4 py-3 flex items-center justify-between border transition-all ${isStrainEmotion
-            ? "bg-red-500/10 border-red-500/30"
-            : "bg-slate-800 border-slate-700"
+          {/* Posture cue card */}
+          {isActive && (
+            <div className={`mx-4 mt-3 rounded-xl px-4 py-3 flex items-center gap-3 border transition-all ${
+              postureStatus === "correct" ? "bg-teal-500/10 border-teal-500/30" : "bg-red-500/10 border-red-500/30"
             }`}>
-            <div>
-              <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-0.5">Expression</p>
-              <p className={`font-semibold capitalize text-sm ${isStrainEmotion ? "text-red-300" : "text-emerald-300"}`}>
-                {strainEmotion}
-              </p>
-              {isStrainEmotion && (
-                <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest mt-0.5">
-                  Strain detected
+              {postureStatus === "correct"
+                ? <CheckCircle2 size={20} className="text-teal-400 shrink-0" />
+                : <AlertCircle size={20} className="text-red-400 shrink-0" />}
+              <div>
+                <p className="text-xs uppercase tracking-wide font-bold mb-0.5 text-slate-400">Form</p>
+                <p className={`text-sm font-semibold ${postureStatus === "correct" ? "text-teal-300" : "text-red-300"}`}>
+                  {postureStatus === "correct" ? "Posture Correct" : (formCue ?? "Check your form")}
                 </p>
-              )}
+              </div>
             </div>
-            <span className="text-3xl">{EMOTION_EMOJI[strainEmotion] ?? "😐"}</span>
-          </div>
-        )}
+          )}
 
-        {/* Status message */}
-        {isActive && (
-          <div className={`rounded-xl px-4 py-3 text-sm font-medium text-center transition-all ${status.includes("✓")
-            ? "bg-emerald-500/20 text-emerald-300"
-            : similarity > 40
-              ? "bg-teal-500/10 text-teal-300"
+          {/* Expression card */}
+          {isActive && strainEmotion && (
+            <div className={`mx-4 mt-3 rounded-xl px-4 py-3 flex items-center justify-between border transition-all ${
+              isStrainEmotion ? "bg-red-500/10 border-red-500/30" : "bg-slate-800 border-slate-700"
+            }`}>
+              <div>
+                <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-0.5">Expression</p>
+                <p className={`font-semibold capitalize text-sm ${isStrainEmotion ? "text-red-300" : "text-emerald-300"}`}>
+                  {strainEmotion}
+                </p>
+                {isStrainEmotion && <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest mt-0.5">Strain detected</p>}
+              </div>
+              <span className="text-3xl">{EMOTION_EMOJI[strainEmotion] ?? "😐"}</span>
+            </div>
+          )}
+
+          {/* Status message */}
+          {isActive && (
+            <div className={`mx-4 mt-3 rounded-xl px-4 py-3 text-sm font-medium text-center transition-all ${
+              status.includes("✓") ? "bg-emerald-500/20 text-emerald-300"
+              : similarity > 40 ? "bg-teal-500/10 text-teal-300"
               : "bg-slate-800 text-slate-400"
             }`}>
-            {status}
+              {status}
+            </div>
+          )}
+
+          <div className="flex-1" />
+
+          {/* Action button */}
+          <div className="p-4 space-y-3">
+            {!isActive ? (
+              <button
+                onClick={startLive}
+                className="w-full flex items-center justify-center gap-2 bg-teal-500 hover:bg-teal-600 text-white py-4 rounded-2xl font-bold text-base transition-all shadow-xl shadow-teal-500/20 active:scale-95"
+              >
+                <Play size={20} fill="white" />
+                Start Session
+              </button>
+            ) : (
+              <button
+                onClick={stopLive}
+                className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white py-4 rounded-2xl font-bold text-base transition-all shadow-xl shadow-red-500/20 active:scale-95"
+              >
+                <StopCircle size={20} />
+                End Session
+              </button>
+            )}
+
+            <p className="text-center text-[11px] text-slate-600">
+              Template: {template?.frameCount} frames · {template?.durationSeconds}s recording
+            </p>
           </div>
-        )}
-
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Action button */}
-        {!isActive ? (
-          <button
-            onClick={startLive}
-            className="w-full flex items-center justify-center gap-2 bg-teal-500 hover:bg-teal-600 text-white py-4 rounded-2xl font-bold text-base transition-all shadow-xl shadow-teal-500/20 active:scale-95"
-          >
-            <Play size={20} fill="white" />
-            Start Session
-          </button>
-        ) : (
-          <button
-            onClick={stopLive}
-            className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white py-4 rounded-2xl font-bold text-base transition-all shadow-xl shadow-red-500/20 active:scale-95"
-          >
-            <StopCircle size={20} />
-            End Session
-          </button>
-        )}
-
-        {/* Template info */}
-        <p className="text-center text-[11px] text-slate-600">
-          Template: {template?.frameCount} frames · {template?.durationSeconds}s recording
-        </p>
+        </div>
       </div>
-    </div>
+
+      {/* ── PhysioBot Post-Session Chatbot ─────────────────────────────────── */}
+      {lastSessionSummary && (
+        <PostSessionChatbot
+          isOpen={chatbotOpen}
+          onClose={handleChatbotClose}
+          sessionSummary={lastSessionSummary}
+          assignmentId={assignmentId ?? ""}
+        />
+      )}
+    </>
   );
 };
 
