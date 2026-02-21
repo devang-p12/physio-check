@@ -7,7 +7,8 @@ interface Props {
   videoRef: RefObject<HTMLVideoElement>
   canvasRef: RefObject<HTMLCanvasElement>
   isActive: boolean
-  tolerance?: number
+  tolerances?: { joint: string; tolerance: number }[]
+  exerciseName?: string
   onRepUpdate: (reps: number) => void
   onPostureUpdate: (status: "correct" | "incorrect") => void
   onCueUpdate?: (cue: string | null) => void
@@ -19,7 +20,7 @@ function speak(text: string) {
   // cancel any current utterance so the new one plays immediately
   window.speechSynthesis.cancel()
   const utt = new SpeechSynthesisUtterance(text)
-  utt.rate  = 0.95
+  utt.rate = 0.95
   utt.pitch = 1.0
   utt.volume = 1.0
   window.speechSynthesis.speak(utt)
@@ -29,13 +30,14 @@ export function usePose({
   videoRef,
   canvasRef,
   isActive,
-  tolerance = 0,
+  tolerances = [],
+  exerciseName,
   onRepUpdate,
   onPostureUpdate,
   onCueUpdate,
 }: Props) {
   // Track last spoken cue + timestamp to avoid spamming
-  const lastCueRef  = useRef<string | null>(null)
+  const lastCueRef = useRef<string | null>(null)
   const lastSpokenRef = useRef<number>(0)
 
   useEffect(() => {
@@ -46,7 +48,7 @@ export function usePose({
     const ctx = canvas.getContext("2d")!
 
     resetPoseState()
-    lastCueRef.current   = null
+    lastCueRef.current = null
     lastSpokenRef.current = 0
 
     const pose = new Pose({
@@ -65,12 +67,12 @@ export function usePose({
       if (!results.poseLandmarks) return
 
       const rect = canvas.getBoundingClientRect()
-      canvas.width  = rect.width
+      canvas.width = rect.width
       canvas.height = rect.height
 
       ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-      const { reps, posture, cue } = processPose(results.poseLandmarks, tolerance)
+      const { reps, posture, cue } = processPose(results.poseLandmarks, tolerances, exerciseName)
 
       onRepUpdate(reps)
       onPostureUpdate(posture)
@@ -84,7 +86,7 @@ export function usePose({
         now - lastSpokenRef.current > 4000
       ) {
         speak(cue)
-        lastCueRef.current   = cue
+        lastCueRef.current = cue
         lastSpokenRef.current = now
       } else if (cue === null) {
         lastCueRef.current = null
@@ -161,13 +163,13 @@ function drawSkeleton(
   line(24, 26)
   line(26, 28)
 
-  /* -------- JOINTS -------- */
-  ;[
-    11, 12, // shoulders
-    13, 14, // elbows
-    15, 16, // wrists
-    23, 24, // hips
-    25, 26, // knees
-    27, 28  // ankles
-  ].forEach(joint)
+    /* -------- JOINTS -------- */
+    ;[
+      11, 12, // shoulders
+      13, 14, // elbows
+      15, 16, // wrists
+      23, 24, // hips
+      25, 26, // knees
+      27, 28  // ankles
+    ].forEach(joint)
 }
