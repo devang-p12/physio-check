@@ -298,9 +298,12 @@ const PatientDashboard = () => {
 
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-slate-900 truncate">
-                        {ex.exercise?.name ?? `Exercise #${ex.exerciseId}`}
+                        {ex.customTemplate?.name ?? ex.exercise?.name ?? `Exercise #${ex.exerciseId}`}
                       </h3>
                       <div className="flex flex-wrap gap-2 mt-1">
+                        {ex.customTemplateId && (
+                          <span className="text-[10px] bg-emerald-50 text-emerald-700 font-semibold px-1.5 py-0.5 rounded-full">Custom</span>
+                        )}
                         <span className="flex items-center gap-1 text-xs text-slate-500">
                           <Trophy size={11} /> {repsText}
                         </span>
@@ -324,7 +327,9 @@ const PatientDashboard = () => {
                       <button
                         className="w-11 h-11 rounded-full bg-teal-500 hover:bg-teal-600 text-white flex items-center justify-center shadow-md shadow-teal-200 transition-all active:scale-95"
                         onClick={() =>
-                          ex.exercise?.name === 'Reaction Exercise'
+                          ex.customTemplateId
+                            ? navigate(`/patient/custom-session?id=${ex.id}`)
+                            : ex.exercise?.name === 'Reaction Exercise'
                             ? navigate(`/patient/reaction-session?id=${ex.id}`)
                             : navigate(`/patient/session?id=${ex.id}&tolerance=${tolerance}`)
                         }

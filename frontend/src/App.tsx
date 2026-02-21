@@ -24,6 +24,7 @@ import DoctorCalendar from "./pages/DoctorCalendar";
 import DoctorList from "./pages/DoctorList";
 import PatientBooking from "./pages/PatientBooking";
 import ChatbotPage from "./pages/Chatbot";
+import PatientCustomExercise from "./pages/PatientCustomExercise";
 import DoctorTodaysAssignments from "./pages/DoctorTodaysAssignments";
 import SessionPage from "./pages/SessionPage";
 import CreateExercise from "./pages/CreateExercise";
@@ -229,6 +230,15 @@ function App() {
           element={
             <ProtectedRoute role="patient">
               <ChatbotPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/patient/custom-session"
+          element={
+            <ProtectedRoute role="patient">
+              <PatientCustomExercise />
             </ProtectedRoute>
           }
         />
