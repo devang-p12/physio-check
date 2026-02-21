@@ -37,7 +37,7 @@ const DoctorList = () => {
 
   if (loading) return (
     <div className="flex justify-center items-center min-h-screen">
-      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500"></div>
     </div>
   );
 
@@ -51,7 +51,7 @@ const DoctorList = () => {
           </div>
           <button 
             onClick={() => navigate('/patient')} 
-            className="text-sm font-medium text-blue-600 hover:underline"
+            className="text-sm font-medium text-green-600 hover:underline"
           >
             Back to Dashboard
           </button>
@@ -70,11 +70,11 @@ const DoctorList = () => {
               className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow flex flex-col justify-between"
             >
               <div>
-                <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center text-blue-600 text-2xl font-bold mb-4">
+                <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center text-green-600 text-2xl font-bold mb-4">
                   {doctor.name.charAt(0)}
                 </div>
                 <h2 className="text-xl font-bold text-gray-900">Dr. {doctor.name}</h2>
-                <p className="text-blue-600 text-sm font-medium mb-2">Physiotherapy Specialist</p>
+                <p className="text-green-600 text-sm font-medium mb-2">Physiotherapy Specialist</p>
                 <p className="text-gray-500 text-sm mb-6">{doctor.email}</p>
               </div>
 
