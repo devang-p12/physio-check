@@ -1,11 +1,18 @@
-import {
-  createTemplate,
-  getTemplatesByDoctor,
-  getTemplateById,
+getTemplateById,
   deleteTemplate,
 } from '../models/CustomExerciseTemplate.model.js';
 import { createAssignment } from '../models/Assignment.model.js';
 import { findUserById } from '../models/User.model.js';
+import ImageKit from 'imagekit';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const imagekit = new ImageKit({
+  publicKey: process.env.IMAGEKIT_PUBLIC_KEY,
+  privateKey: process.env.IMAGEKIT_PRIVATE_KEY,
+  urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT,
+});
 
 // ─── Doctor: upload a new template ──────────────────────────────────────────
 export const uploadTemplate = async (req, res) => {
@@ -14,6 +21,7 @@ export const uploadTemplate = async (req, res) => {
     name, description, category,
     frameCount, durationSeconds, frames,
     exerciseMode, exerciseType, stretchConfig,
+    videoUrl, keyframeTimestamps,
   } = req.body;
 
   if (!name || frameCount == null || durationSeconds == null) {
@@ -40,6 +48,8 @@ export const uploadTemplate = async (req, res) => {
       durationSeconds,
       frames: frames || [],
       stretchConfig: stretchConfig || undefined,
+      videoUrl: videoUrl || undefined,
+      keyframeTimestamps: keyframeTimestamps || [],
     });
 
     return res.status(201).json({
@@ -60,6 +70,25 @@ export const uploadTemplate = async (req, res) => {
   } catch (err) {
     console.error('uploadTemplate error:', err);
     return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const uploadVideo = async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: 'No file uploaded' });
+  }
+
+  try {
+    const uploadRes = await imagekit.upload({
+      file: req.file.buffer, // upload from memory buffer
+      fileName: `exercise_${Date.now()}.webm`,
+      folder: '/physio-check/videos/',
+    });
+
+    return res.status(200).json({ videoUrl: uploadRes.url });
+  } catch (err) {
+    console.error('ImageKit upload error:', err);
+    return res.status(500).json({ message: 'Cloud upload failed' });
   }
 };
 
@@ -166,6 +195,8 @@ export const getTemplateForPatient = async (req, res) => {
         frameCount: template.frameCount,
         durationSeconds: template.durationSeconds,
         frames: template.frames,
+        videoUrl: template.videoUrl,
+        keyframeTimestamps: template.keyframeTimestamps,
       },
     });
   } catch (err) {

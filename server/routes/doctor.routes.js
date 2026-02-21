@@ -7,13 +7,14 @@ import { getDoctorPatients } from "../controllers/getPatients.controller.js";
 import { getExercises, seedExercises } from '../controllers/exercise.controller.js';
 import {
   uploadTemplate,
+  uploadVideo,
   listTemplates,
   removeTemplate,
   assignCustomExercise,
 } from '../controllers/customExercise.controller.js';
-import { 
-  getDoctorPatientSessions, 
-  getSessionDetails, 
+import {
+  getDoctorPatientSessions,
+  getSessionDetails,
   getPatientPerformanceSummary,
   getAssignmentSessions,
   generatePatientReport
@@ -29,8 +30,13 @@ router.get("/patients", auth, doctorOnly, getDoctorPatients);
 router.get("/exercises", auth, doctorOnly, getExercises);
 router.post("/seed-exercises", auth, doctorOnly, seedExercises);
 
+import multer from 'multer';
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
+
 // Custom exercise template routes
 router.post("/custom-templates", auth, doctorOnly, uploadTemplate);
+router.post("/upload-video", auth, doctorOnly, upload.single('video'), uploadVideo);
 router.get("/custom-templates", auth, doctorOnly, listTemplates);
 router.delete("/custom-templates/:id", auth, doctorOnly, removeTemplate);
 router.post("/assign-custom-exercise", auth, doctorOnly, assignCustomExercise);

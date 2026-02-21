@@ -26,6 +26,8 @@ const customExerciseTemplateSchema = new mongoose.Schema({
     lm2: { type: Number },
     direction: { type: String, enum: ['inward', 'outward'] },
   },
+  videoUrl: { type: String },
+  keyframeTimestamps: { type: [Number], default: [] },
 }, { timestamps: true });
 
 const CustomExerciseTemplate = mongoose.model(
