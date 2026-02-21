@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   X,
   RefreshCcw,
@@ -8,12 +8,27 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import * as faceapi from "face-api.js";
 
 import { usePose } from "../hooks/usePose";
 import { useHands } from "../hooks/useHands";
 import wsService from "../services/websocket.service";
 import { useGoogleFit } from "../hooks/useGoogleFit";
 import ReactionExercise from "../components/ReactionExercise";
+
+// Emotions considered strain indicators
+const STRAIN_EMOTIONS = ["angry", "sad", "fearful", "disgusted"];
+
+// Emoji map for display
+const EMOTION_EMOJI: Record<string, string> = {
+  happy:     "😊",
+  neutral:   "😐",
+  surprised: "😮",
+  angry:     "😠",
+  sad:       "😢",
+  fearful:   "😨",
+  disgusted: "🤢",
+};
 
 const ExerciseSession = () => {
   const navigate = useNavigate();
@@ -34,8 +49,21 @@ const ExerciseSession = () => {
   const [reactionHits, setReactionHits] = useState(0);
   const [reactionTimeLeft, setReactionTimeLeft] = useState(0);
 
+  // ── Emotion state ──────────────────────────────────────────────────────────
+  const [detectedEmotion, setDetectedEmotion] = useState<string | null>(null);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // ── Emotion / audio refs ───────────────────────────────────────────────────
+  const emotionModelLoaded  = useRef(false);
+  const lastAudioTimeRef    = useRef(0);
+  const frameCounterRef     = useRef(0);
+  const emotionLoopRef      = useRef<number | null>(null);
+  const isActiveRef         = useRef(false);
+
+  // Keep isActiveRef in sync
+  useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
 
   const { isConnected: googleFitConnected, connect: connectGoogleFit } = useGoogleFit();
   const [wsConnected, setWsConnected] = useState(false);
@@ -58,6 +86,97 @@ const ExerciseSession = () => {
       if (interval) clearInterval(interval);
     };
   }, [isActive]);
+
+  /* ---------------- LOAD EMOTION MODELS ---------------- */
+  useEffect(() => {
+    const loadEmotionModels = async () => {
+      try {
+        await faceapi.nets.tinyFaceDetector.loadFromUri("/models");
+        await faceapi.nets.faceExpressionNet.loadFromUri("/models");
+        emotionModelLoaded.current = true;
+        console.log("Emotion models loaded");
+      } catch (err) {
+        console.error("Emotion model load failed", err);
+      }
+    };
+    loadEmotionModels();
+  }, []);
+
+  /* ---------------- AUDIO WARNING ---------------- */
+  const triggerAudioWarning = useCallback(() => {
+    const now = Date.now();
+    if (now - lastAudioTimeRef.current < 8000) return; // 8 s cooldown
+    lastAudioTimeRef.current = now;
+    const msg = new SpeechSynthesisUtterance(
+      "Please do not pressure yourself. Take it slow."
+    );
+    msg.rate   = 0.9;
+    msg.pitch  = 1;
+    msg.volume = 1;
+    window.speechSynthesis.speak(msg);
+  }, []);
+
+  /* ---------------- EMOTION DETECTION LOOP ---------------- */
+  // Runs independently of the pose loop — polls every ~500 ms when session active
+  const runEmotionLoop = useCallback(async () => {
+    if (!emotionModelLoaded.current || !videoRef.current) return;
+    if (!isActiveRef.current) return;
+
+    frameCounterRef.current++;
+
+    // Only run detection every 5 ticks (~2.5 s effective interval to keep CPU low)
+    if (frameCounterRef.current % 5 === 0) {
+      try {
+        const video = videoRef.current;
+        if (video.readyState >= 2) {
+          const detection = await faceapi
+            .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+            .withFaceExpressions();
+
+          if (detection?.expressions) {
+            const dominantEmotion = Object.entries(detection.expressions as any)
+              .sort((a: any, b: any) => b[1] - a[1])[0][0];
+            setDetectedEmotion(dominantEmotion);
+
+            const { angry, sad, fearful } = detection.expressions as any;
+            const strainScore = (angry ?? 0) + (sad ?? 0) + (fearful ?? 0);
+
+            if (strainScore > 0.8) {
+              triggerAudioWarning();
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Emotion detection error", err);
+      }
+    }
+
+    // Schedule next tick in 500 ms
+    emotionLoopRef.current = window.setTimeout(runEmotionLoop, 500);
+  }, [triggerAudioWarning]);
+
+  // Start / stop emotion loop with session state
+  useEffect(() => {
+    if (isActive) {
+      frameCounterRef.current = 0;
+      lastAudioTimeRef.current = 0;
+      emotionLoopRef.current = window.setTimeout(runEmotionLoop, 500);
+    } else {
+      if (emotionLoopRef.current) {
+        clearTimeout(emotionLoopRef.current);
+        emotionLoopRef.current = null;
+      }
+      setDetectedEmotion(null);
+      window.speechSynthesis.cancel();
+    }
+
+    return () => {
+      if (emotionLoopRef.current) {
+        clearTimeout(emotionLoopRef.current);
+        emotionLoopRef.current = null;
+      }
+    };
+  }, [isActive, runEmotionLoop]);
 
   /* ---------------- SMARTWATCH SETTINGS ---------------- */
   useEffect(() => {
@@ -189,13 +308,9 @@ const ExerciseSession = () => {
         setSessionId(data.session.id);
         setSessionMode(data.session.mode);
         setIsActive(true);
-        // Use server's recorded startTime so the Google Fit query window
-        // matches exactly what the server stored (avoids client/server clock drift)
         setSessionStartTime(new Date(data.session.startTime));
 
         console.log('Session started:', data);
-        console.log('Session mode set to:', data.session.mode);
-        console.log('Current state - smartwatchEnabled:', smartwatchEnabled, 'sessionMode:', data.session.mode);
 
         if (data.warnings && data.warnings.length > 0) {
           console.warn('Session warnings:', data.warnings);
@@ -243,12 +358,9 @@ const ExerciseSession = () => {
           wsService.endSession(sessionId);
         }
 
-        // Fetch historical data if smartwatch was enabled
         if (smartwatchEnabled && sessionStartTime && sessionMode === 'tracked') {
           setTimeout(async () => {
             try {
-              // Add ±5 min buffer around the session window so that any
-              // Google Fit data synced slightly before/after is captured
               const bufferMs = 5 * 60 * 1000;
               const queryStart = new Date(sessionStartTime.getTime() - bufferMs);
               const queryEnd = new Date(endTime.getTime() + bufferMs);
@@ -279,7 +391,7 @@ const ExerciseSession = () => {
             }
 
             navigate('/patient');
-          }, 2000); // Wait 2 seconds for Google Fit to sync
+          }, 2000);
         } else {
           alert(`Session completed!\n\nReps: ${reps}\nDuration: ${formatTime(timer)}`);
           navigate('/patient');
@@ -294,6 +406,9 @@ const ExerciseSession = () => {
       alert('Failed to end session');
     }
   };
+
+  // Derived helpers
+  const isStrain = detectedEmotion ? STRAIN_EMOTIONS.includes(detectedEmotion) : false;
 
   return (
     <div className="h-screen bg-slate-900 flex flex-col md:flex-row overflow-hidden font-sans">
@@ -361,6 +476,20 @@ const ExerciseSession = () => {
           </div>
         )}
 
+        {/* ── Emotion badge — top-right of camera feed ── */}
+        {isActive && detectedEmotion && (
+          <div className={`absolute top-4 right-4 z-20 flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold backdrop-blur-sm border transition-all ${
+            isStrain
+              ? "bg-red-500/20 border-red-500/40 text-red-300"
+              : "bg-slate-800/80 border-slate-700 text-slate-300"
+          }`}>
+            <span className="text-lg leading-none">{EMOTION_EMOJI[detectedEmotion] ?? "😐"}</span>
+            <span className="capitalize">{detectedEmotion}</span>
+            {isStrain && (
+              <span className="text-[10px] uppercase tracking-widest text-red-400 font-bold">Strain</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* --- RIGHT SIDEBAR --- */}
@@ -382,7 +511,7 @@ const ExerciseSession = () => {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-8">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* Stats */}
           <div className="grid grid-cols-2 gap-4">
             {isReaction ? (
@@ -420,6 +549,30 @@ const ExerciseSession = () => {
             )}
           </div>
 
+          {/* ── Expression card (sidebar) ── */}
+          {isActive && detectedEmotion && (
+            <div className={`rounded-xl px-4 py-3 flex items-center justify-between border transition-all ${
+              isStrain
+                ? "bg-red-50 border-red-200"
+                : "bg-slate-50 border-slate-200"
+            }`}>
+              <div>
+                <p className="text-xs text-slate-500 uppercase tracking-wide font-bold mb-0.5">
+                  Expression
+                </p>
+                <p className={`font-semibold capitalize text-sm ${isStrain ? "text-red-600" : "text-emerald-600"}`}>
+                  {detectedEmotion}
+                </p>
+                {isStrain && (
+                  <p className="text-[10px] text-red-500 font-bold uppercase tracking-widest mt-0.5">
+                    Strain detected
+                  </p>
+                )}
+              </div>
+              <span className="text-3xl">{EMOTION_EMOJI[detectedEmotion] ?? "😐"}</span>
+            </div>
+          )}
+
           {/* Instructions */}
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -432,7 +585,6 @@ const ExerciseSession = () => {
 
               {/* Google Fit Status Badge */}
               {isActive ? (
-                // Show actual session mode when session is active
                 smartwatchEnabled && sessionMode === 'tracked' ? (
                   <div className="flex items-center gap-2 px-3 py-1 bg-green-100 rounded-full border border-green-300">
                     <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
@@ -450,7 +602,6 @@ const ExerciseSession = () => {
                   </div>
                 )
               ) : (
-                // Show predicted mode before session starts
                 smartwatchEnabled && predictedMode === 'tracked' ? (
                   <div className="flex items-center gap-2 px-3 py-1 bg-green-100 rounded-full border border-green-300">
                     <div className="w-2 h-2 rounded-full bg-green-500"></div>

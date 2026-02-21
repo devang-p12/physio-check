@@ -1,4 +1,4 @@
-getTemplateById,
+import {getTemplateById,
   deleteTemplate,
 } from '../models/CustomExerciseTemplate.model.js';
 import { createAssignment } from '../models/Assignment.model.js';
