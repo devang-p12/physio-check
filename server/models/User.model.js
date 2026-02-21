@@ -18,6 +18,31 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
     enum: ['doctor', 'patient']
+  },
+  googleFit: {
+    accessToken: String,
+    refreshToken: String,
+    expiresAt: Date,
+    scope: String,
+    connectedAt: Date
+  },
+  settings: {
+    smartwatchEnabled: {
+      type: Boolean,
+      default: false
+    },
+    enableRealTimeTracking: {
+      type: Boolean,
+      default: true
+    },
+    enableFormAnalysis: {
+      type: Boolean,
+      default: true
+    }
+  },
+  lastOnline: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true
@@ -46,4 +71,8 @@ export const getAllUsers = async () => {
 
 export const getUsersByRole = async (role) => {
   return await User.find({ role });
+};
+
+export const updateUser = async (id, updateData) => {
+  return await User.findByIdAndUpdate(id, updateData, { new: true });
 };

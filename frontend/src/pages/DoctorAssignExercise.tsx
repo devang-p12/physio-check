@@ -9,6 +9,7 @@ import {
   Calendar,
   Target,
   ChevronRight,
+  Cpu,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../api";
@@ -23,6 +24,7 @@ const AssignExercise = () => {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [exerciseLibrary, setExerciseLibrary] = useState([]);
+  const [customTemplates, setCustomTemplates] = useState([]);
 
   // 🔹 Date handling
   const today = new Date().toISOString().split("T")[0];
@@ -33,6 +35,9 @@ const AssignExercise = () => {
 
   const filteredLibrary = exerciseLibrary.filter((ex) =>
     ex.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  const filteredCustom = customTemplates.filter((t) =>
+    t.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   // 🔹 Fetch patient info and exercises
@@ -58,11 +63,16 @@ const AssignExercise = () => {
         if (exerciseData.exercises && exerciseData.exercises.length > 0) {
           setExerciseLibrary(exerciseData.exercises);
         } else {
-          // Seed exercises if none exist
-          const seededData = await apiFetch("/doctor/seed-exercises", {
-            method: "POST",
-          });
+          const seededData = await apiFetch("/doctor/seed-exercises", { method: "POST" });
           setExerciseLibrary(seededData.exercises);
+        }
+
+        // Fetch doctor's custom exercise templates
+        try {
+          const customData = await apiFetch("/doctor/custom-templates");
+          setCustomTemplates(customData.templates || []);
+        } catch (_) {
+          // custom templates are optional — fail silently
         }
       } catch (err) {
         console.error(err);
@@ -73,10 +83,43 @@ const AssignExercise = () => {
   }, [patientId, navigate]);
 
   const addExercise = (exercise) => {
-    if (!selectedExercises.find((e) => e._id === exercise._id)) {
+    if (!selectedExercises.find((e) => e._id === exercise._id && !e.isCustom)) {
       setSelectedExercises([
         ...selectedExercises,
-        { ...exercise, sets: 3, reps: exercise.reps || 10 },
+        {
+          ...exercise,
+          sets: 3,
+          reps: exercise.reps || 10,
+          tolerances: [
+            { joint: "Knee", tolerance: 15 },
+            { joint: "Hip", tolerance: 15 },
+            { joint: "Shoulder", tolerance: 15 },
+            { joint: "Elbow", tolerance: 15 }
+          ],
+          isCustom: false
+        },
+      ]);
+    }
+  };
+
+  const addCustomTemplate = (tmpl) => {
+    if (!selectedExercises.find((e) => e._id === tmpl.id && e.isCustom)) {
+      setSelectedExercises([
+        ...selectedExercises,
+        {
+          _id: tmpl.id,
+          name: tmpl.name,
+          description: tmpl.description,
+          sets: 3,
+          reps: 10,
+          tolerances: [
+            { joint: "Knee", tolerance: 15 },
+            { joint: "Hip", tolerance: 15 },
+            { joint: "Shoulder", tolerance: 15 },
+            { joint: "Elbow", tolerance: 15 }
+          ],
+          isCustom: true
+        },
       ]);
     }
   };
@@ -93,6 +136,21 @@ const AssignExercise = () => {
     );
   };
 
+  const updateTolerance = (id, joint, value) => {
+    setSelectedExercises(
+      selectedExercises.map((e) =>
+        e._id === id
+          ? {
+            ...e,
+            tolerances: e.tolerances.map((t) =>
+              t.joint === joint ? { ...t, tolerance: Number(value) } : t
+            ),
+          }
+          : e
+      )
+    );
+  };
+
   const handleAssign = async () => {
     if (selectedExercises.length === 0) {
       alert("Select at least one exercise");
@@ -105,15 +163,33 @@ const AssignExercise = () => {
     setLoading(true);
     try {
       for (const ex of selectedExercises) {
-        await apiFetch("/doctor/assign-exercise", {
-          method: "POST",
-          body: JSON.stringify({
-            patientId,
-            exerciseId: ex._id,
-            prescription: { sets: ex.sets, repsPerSet: ex.reps },
-            date: startDate,
-          }),
-        });
+        if (ex.isCustom) {
+          // custom exercise template
+          await apiFetch("/doctor/assign-custom-exercise", {
+            method: "POST",
+            body: JSON.stringify({
+              patientId,
+              customTemplateId: ex._id,
+              sets: ex.sets,
+              repsPerSet: ex.reps,
+              tolerances: ex.tolerances,
+              date: startDate,
+              endDate: endDate,
+            }),
+          });
+        } else {
+          // standard exercise
+          await apiFetch("/doctor/assign-exercise", {
+            method: "POST",
+            body: JSON.stringify({
+              patientId,
+              exerciseId: ex._id,
+              prescription: { sets: ex.sets, repsPerSet: ex.reps, tolerances: ex.tolerances },
+              date: startDate,
+              endDate: endDate,
+            }),
+          });
+        }
       }
       alert("Exercise plan assigned successfully");
       navigate("/doctor");
@@ -156,12 +232,12 @@ const AssignExercise = () => {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
+
           {/* LEFT: Exercise Library */}
           <div className="lg:col-span-8 space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                Exercise Library 
+                Exercise Library
                 <span className="text-xs font-normal bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
                   {exerciseLibrary.length}
                 </span>
@@ -186,9 +262,12 @@ const AssignExercise = () => {
                 >
                   <div>
                     <div className="flex justify-between items-start mb-4">
-                      <div className="p-2.5 bg-teal-50 text-teal-600 rounded-xl group-hover:bg-teal-500 group-hover:text-white transition-colors">
-                        <Dumbbell size={22} />
+                      <div className={`p-2.5 rounded-xl transition-colors ${ex.name === 'Reaction Exercise' ? 'bg-purple-50 text-purple-600 group-hover:bg-purple-500 group-hover:text-white' : 'bg-teal-50 text-teal-600 group-hover:bg-teal-500 group-hover:text-white'}`}>
+                        {ex.name === 'Reaction Exercise' ? <span className="text-xl">🎯</span> : <Dumbbell size={22} />}
                       </div>
+                      {ex.name === 'Reaction Exercise' && (
+                        <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Camera</span>
+                      )}
                     </div>
                     <h3 className="font-bold text-slate-900 group-hover:text-teal-700 transition-colors">{ex.name}</h3>
                     <p className="text-sm text-slate-500 mt-1">
@@ -204,12 +283,49 @@ const AssignExercise = () => {
                 </div>
               ))}
             </div>
+
+            {/* Custom exercise templates */}
+            {filteredCustom.length > 0 && (
+              <div className="mt-8">
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-4">
+                  <Cpu size={18} className="text-emerald-600" />
+                  Custom Recorded Exercises
+                  <span className="text-xs font-normal bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{filteredCustom.length}</span>
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredCustom.map((tmpl) => (
+                    <div
+                      key={tmpl.id}
+                      className="group bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 hover:shadow-md transition-all flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="flex justify-between items-start mb-4">
+                          <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
+                            <Cpu size={22} />
+                          </div>
+                          <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">Custom</span>
+                        </div>
+                        <h3 className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">{tmpl.name}</h3>
+                        <p className="text-sm text-slate-500 mt-1">{tmpl.description || tmpl.category}</p>
+                        <p className="text-xs text-slate-400 mt-1">{tmpl.frameCount} frames · {tmpl.durationSeconds}s</p>
+                      </div>
+                      <button
+                        onClick={() => addCustomTemplate(tmpl)}
+                        className="mt-5 w-full py-2.5 bg-slate-50 hover:bg-emerald-600 hover:text-white text-slate-700 font-semibold rounded-xl flex items-center justify-center gap-2 transition-all"
+                      >
+                        <Plus size={18} /> Add to Plan
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* RIGHT: Plan Builder */}
           <div className="lg:col-span-4">
             <div className="sticky top-28 space-y-6">
-              
+
               {/* DATE SELECTOR */}
               <div className="bg-white rounded-2xl p-5 border shadow-sm">
                 <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
@@ -290,6 +406,33 @@ const AssignExercise = () => {
                               className="w-full border-transparent bg-white px-3 py-1.5 rounded-lg text-sm focus:ring-2 focus:ring-teal-500/20 border outline-none font-medium"
                             />
                           </div>
+                        </div>
+
+                        {/* TOLERANCE SLIDERS */}
+                        <div className="mt-4 space-y-4">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight block border-b pb-1 mb-2">Joint Tolerances</label>
+                          {ex.tolerances?.map(t => (
+                            <div key={t.joint}>
+                              <div className="flex justify-between items-center mb-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase">{t.joint}</span>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${t.tolerance === 0
+                                    ? "bg-slate-100 text-slate-500"
+                                    : t.tolerance <= 15
+                                      ? "bg-yellow-50 text-yellow-600"
+                                      : "bg-orange-50 text-orange-600"
+                                  }`}>{t.tolerance}°</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={0}
+                                max={45}
+                                step={5}
+                                value={t.tolerance}
+                                onChange={(e) => updateTolerance(ex._id, t.joint, e.target.value)}
+                                className="w-full h-1.5 rounded-full appearance-none bg-slate-200 accent-teal-500 cursor-pointer"
+                              />
+                            </div>
+                          ))}
                         </div>
                       </div>
                     ))
