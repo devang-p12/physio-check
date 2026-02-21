@@ -1,594 +1,198 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { Play, StopCircle, ChevronLeft, Activity, Repeat2, Zap } from "lucide-react";
-import { Pose, POSE_CONNECTIONS } from "@mediapipe/pose";
-import type { Results } from "@mediapipe/pose";
-import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  ChevronLeft,
+  Clock,
+  Activity,
+  Calendar,
+  ArrowRight,
+  Trophy,
+  AlertCircle,
+  Dumbbell
+} from "lucide-react";
 
-// ───────────────────────────────────────────────────────────────────────────────
-interface NormLandmark { x: number; y: number; z: number; visibility: number; }
-type NormFrame = NormLandmark[];
-
-const FULL_BODY_IDX  = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
-const UPPER_BODY_IDX = [11, 12, 13, 14, 15, 16];
-const LOWER_CHECK    = [23, 24, 25, 26];
-
-// ── PoseNormalizer ────────────────────────────────────────────────────────────
-// forceIdx pins the landmark set to match whatever the template was recorded with.
-// Without this, live frames might use UPPER_BODY (6 lms) while the template has
-// FULL_BODY (12 lms), causing a permanent DTW length mismatch → similarity ≈ 0.
-class PoseNormalizer {
-  static isFullBody(lms: any[]): boolean {
-    return LOWER_CHECK.filter(i => (lms[i]?.visibility ?? 0) > 0.3).length >= 2;
-  }
-
-  static normalize(lms: any[], forceIdx?: number[]): NormFrame | null {
-    if (!lms || lms.length < 17) return null;
-    const lS = lms[11], rS = lms[12];
-    // Lowered from 0.3 → 0.15 so poor lighting doesn't kill detection
-    if ((lS?.visibility ?? 1) < 0.15 || (rS?.visibility ?? 1) < 0.15) return null;
-    const cx = (lS.x + rS.x) / 2, cy = (lS.y + rS.y) / 2, cz = (lS.z + rS.z) / 2;
-    const sw = Math.sqrt((lS.x - rS.x) ** 2 + (lS.y - rS.y) ** 2);
-    if (sw < 0.01) return null;
-    const idx = forceIdx ?? (this.isFullBody(lms) ? FULL_BODY_IDX : UPPER_BODY_IDX);
-    return idx.map(i => ({
-      x: (lms[i].x - cx) / sw,
-      y: (lms[i].y - cy) / sw,
-      z: (lms[i].z - cz) / sw,
-      visibility: lms[i]?.visibility ?? 1,
-    }));
-  }
-
-  /** Infer which landmark index set was used when the template was recorded. */
-  static inferIdx(frames: number[][][]): number[] {
-    const landmarkCount = frames[0]?.length ?? 6;
-    return landmarkCount === FULL_BODY_IDX.length ? FULL_BODY_IDX : UPPER_BODY_IDX;
-  }
-}
-
-// ── DTW ───────────────────────────────────────────────────────────────────────
-class DTW {
-  static frameDistance(a: NormFrame, b: NormFrame): number {
-    const n = Math.min(a.length, b.length);
-    if (n === 0) return 1;
-    let total = 0;
-    for (let i = 0; i < n; i++)
-      total += Math.sqrt(
-        (a[i].x - b[i].x) ** 2 +
-        (a[i].y - b[i].y) ** 2 +
-        (a[i].z - b[i].z) ** 2
-      );
-    return total / n;
-  }
-
-  static compute(s1: NormFrame[], s2: NormFrame[]): number {
-    const n = s1.length, m = s2.length;
-    const mat: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(Infinity));
-    mat[0][0] = 0;
-    for (let i = 1; i <= n; i++)
-      for (let j = 1; j <= m; j++) {
-        const cost = this.frameDistance(s1[i - 1], s2[j - 1]);
-        mat[i][j] = cost + Math.min(mat[i - 1][j], mat[i][j - 1], mat[i - 1][j - 1]);
-      }
-    return mat[n][m] / (n + m);
-  }
-
-  // Divisor raised 1.0 → 1.4 so imperfect form still scores meaningfully.
-  // Multipliers raised slightly so mid-range scores aren't penalised.
-  static similarity(dist: number): number {
-    const raw = Math.max(0, Math.min(100, 100 * (1 - dist / 1.4)));
-    if (raw > 60) return Math.min(100, Math.round(raw * 1.15));
-    if (raw > 40) return Math.round(raw * 1.08);
-    return Math.round(raw);
-  }
-}
-
-// ── LiveMatcher ───────────────────────────────────────────────────────────────
-interface LiveMatchResult { similarity: number; repCount: number; status: string; }
-
-class LiveMatcher {
-  private template: NormFrame[];
-  private landmarkIdx: number[];   // pinned to template's landmark set
-  private windowSize: number;
-  private buffer: NormFrame[] = [];
-  repCount = 0;
-  private isCooldown = false;
-  private readonly cooldownMs = 1500;
-  private readonly repThreshold = 55; // lowered 75 → 55 for more forgiving matching
-  private lastSampleMs = 0;
-  private readonly sampleIntervalMs = 100;
-  private _lastResult: LiveMatchResult | null = null;
-
-  constructor(frames: NormFrame[], landmarkIdx: number[]) {
-    this.template    = frames;
-    this.landmarkIdx = landmarkIdx;
-    this.windowSize  = Math.round(frames.length * 1.5);
-  }
-
-  private smooth(frame: NormFrame): NormFrame {
-    if (this.buffer.length === 0) return frame;
-    const last = this.buffer[this.buffer.length - 1];
-    return frame.map((lm, i) => ({
-      x:          lm.x * 0.7 + (last[i]?.x ?? lm.x) * 0.3,
-      y:          lm.y * 0.7 + (last[i]?.y ?? lm.y) * 0.3,
-      z:          lm.z * 0.7 + (last[i]?.z ?? lm.z) * 0.3,
-      visibility: lm.visibility,
-    }));
-  }
-
-  processFrame(frame: NormFrame | null): LiveMatchResult {
-    if (!frame) return { similarity: 0, repCount: this.repCount, status: "Detecting body..." };
-
-    const now = Date.now();
-    if (now - this.lastSampleMs < this.sampleIntervalMs)
-      return this._lastResult ?? { similarity: 0, repCount: this.repCount, status: "Preparing..." };
-    this.lastSampleMs = now;
-
-    this.buffer.push(this.smooth(frame));
-    if (this.buffer.length > this.windowSize) this.buffer.shift();
-
-    if (this.buffer.length < Math.ceil(this.template.length * 0.5)) {
-      const r = { similarity: 0, repCount: this.repCount, status: "Preparing..." };
-      this._lastResult = r;
-      return r;
-    }
-
-    const tLen = this.template.length;
-    const slices = [
-      this.buffer.slice(-tLen),
-      this.buffer.slice(-Math.round(tLen * 0.8)),
-      this.buffer.slice(-Math.round(tLen * 1.2)),
-    ];
-
-    let best = 0;
-    for (const slice of slices) {
-      if (slice.length < 5) continue;
-      const s = DTW.similarity(DTW.compute(slice, this.template));
-      if (s > best) best = s;
-    }
-
-    let status = "Perform Movement";
-    if (best > this.repThreshold && !this.isCooldown) {
-      this.repCount++;
-      this.triggerCooldown();
-      status = "✓ Rep Logged!";
-    } else if (this.isCooldown) {
-      status = "Rep logged — keep going";
-    } else if (best > 40) {
-      status = "Movement detected...";
-    } else if (this.buffer.length >= tLen) {
-      status = "Keep going";
-    }
-
-    const result = { similarity: best, repCount: this.repCount, status };
-    this._lastResult = result;
-    return result;
-  }
-
-  private triggerCooldown() {
-    this.isCooldown = true;
-    setTimeout(() => {
-      this.isCooldown = false;
-      this.buffer = this.buffer.slice(Math.round(this.buffer.length / 2));
-    }, this.cooldownMs);
-  }
-
-  reset() {
-    this.repCount = 0; this.buffer = []; this.isCooldown = false;
-    this.lastSampleMs = 0; this._lastResult = null;
-  }
-}
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-interface Template {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  frameCount: number;
-  durationSeconds: number;
-  frames: number[][][]; // frames[i][j] = [x,y,z,vis]
-}
-
-// ── Component ─────────────────────────────────────────────────────────────────
-const PatientCustomExercise: React.FC = () => {
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const assignmentId = searchParams.get("id");
-
-  const [assignment, setAssignment]   = useState<any>(null);
-  const [template, setTemplate]       = useState<Template | null>(null);
-  const [loadingData, setLoadingData] = useState(true);
-  const [error, setError]             = useState<string | null>(null);
-
-  const [isActive, setIsActive]   = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [timer, setTimer]         = useState(0);
-  const [matchResult, setMatchResult] = useState<LiveMatchResult>({
-    similarity: 0,
-    repCount: 0,
-    status: "Press Start to begin",
-  });
-
-  const videoRef   = useRef<HTMLVideoElement>(null);
-  const canvasRef  = useRef<HTMLCanvasElement>(null);
-  const poseRef    = useRef<Pose | null>(null);
-  const streamRef  = useRef<MediaStream | null>(null);
-  const animRef    = useRef<number | null>(null);
-  const stopRef    = useRef(false);
-  const matcherRef = useRef<LiveMatcher | null>(null);
-  const templateFramesRef = useRef<NormFrame[]>([]);
-  // Pinned landmark index — set from template on load, used for every live frame
-  const templateIdxRef = useRef<number[]>(UPPER_BODY_IDX);
-  const repCountRef    = useRef(0);
-  const timerRef       = useRef<number | null>(null);
-
-  // ── Load assignment + template ──────────────────────────────────────────────
-  useEffect(() => {
-    if (!assignmentId) { setError("No assignment ID"); setLoadingData(false); return; }
-    const token = localStorage.getItem("token");
-
-    const load = async () => {
-      try {
-        const assignRes = await fetch(`http://localhost:5000/patient/assignment/${assignmentId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!assignRes.ok) throw new Error("Failed to load assignment");
-        const assignData = await assignRes.json();
-        const assign = assignData.assignment;
-        setAssignment(assign);
-
-        const tmplId = assign.customTemplateId;
-        if (!tmplId) throw new Error("This assignment does not have a custom exercise template");
-
-        const tmplRes = await fetch(`http://localhost:5000/patient/custom-template/${tmplId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!tmplRes.ok) throw new Error("Failed to load exercise template");
-        const tmplData = await tmplRes.json();
-        setTemplate(tmplData.template);
-
-        // Infer which landmark set was used when this template was recorded,
-        // then pin it so live frames always use the same joints.
-        const landmarkIdx = PoseNormalizer.inferIdx(tmplData.template.frames);
-        templateIdxRef.current = landmarkIdx;
-
-        const normFrames: NormFrame[] = tmplData.template.frames.map((f: number[][]) =>
-          f.map(([x, y, z, v]) => ({ x, y, z, visibility: v ?? 1 }))
-        );
-        templateFramesRef.current = normFrames;
-        matcherRef.current = new LiveMatcher(normFrames, landmarkIdx);
-      } catch (e: any) {
-        setError(e.message ?? "Unknown error");
-      } finally {
-        setLoadingData(false);
-      }
+interface Session {
+  _id: string;
+  assignmentId: {
+    _id: string;
+    exerciseId?: { name: string };
+    customTemplateId?: { name: string };
+  };
+  startTime: string;
+  endTime?: string;
+  status: string;
+  analytics?: {
+    repsCompleted?: number;
+    formQuality?: {
+      score: number;
     };
-    load();
-  }, [assignmentId]);
+    totalDuration?: number;
+  };
+}
 
-  // ── Timer ───────────────────────────────────────────────────────────────────
+const PatientSessionHistory: React.FC = () => {
+  const navigate = useNavigate();
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
-    if (isActive) {
-      timerRef.current = window.setInterval(() => setTimer(t => t + 1), 1000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [isActive]);
-
-  // ── MediaPipe setup ─────────────────────────────────────────────────────────
-  const initPose = useCallback(async () => {
-    if (!videoRef.current || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d")!;
-
-    const pose = new Pose({
-      locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${f}`,
-    });
-    pose.setOptions({
-      modelComplexity: 1,
-      smoothLandmarks: true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5,
-    });
-
-    pose.onResults((results: Results) => {
-      canvas.width  = videoRef.current?.videoWidth  ?? 640;
-      canvas.height = videoRef.current?.videoHeight ?? 480;
-      ctx.save();
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      if (results.poseLandmarks) {
-        // Pass the pinned index so live normalization uses the same joints as the template
-        const norm = PoseNormalizer.normalize(
-          results.poseLandmarks as any,
-          templateIdxRef.current,
-        );
-
-        if (norm && matcherRef.current) {
-          const res = matcherRef.current.processFrame(norm);
-          repCountRef.current = res.repCount;
-          setMatchResult({ similarity: res.similarity, repCount: res.repCount, status: res.status });
-          const col = res.similarity >= 55
-            ? "#10b981"
-            : res.similarity >= 35
-            ? "#f59e0b"
-            : "#94a3b8";
-          drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: col, lineWidth: 2 });
-          drawLandmarks(ctx, results.poseLandmarks, { color: "#ffffff", lineWidth: 1, radius: 3 });
-        } else {
-          drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: "#00e5cc", lineWidth: 2 });
-          drawLandmarks(ctx, results.poseLandmarks, { color: "#ffffff", lineWidth: 1, radius: 3 });
-        }
-      }
-      ctx.restore();
-    });
-
-    await pose.initialize();
-    poseRef.current = pose;
-    stopRef.current = false;
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 1280, height: 720 },
-        audio: false,
-      });
-      streamRef.current = stream;
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
-
-      const sendLoop = async () => {
-        if (stopRef.current) return;
-        if (videoRef.current && videoRef.current.readyState >= 2)
-          await pose.send({ image: videoRef.current });
-        animRef.current = requestAnimationFrame(sendLoop);
-      };
-      animRef.current = requestAnimationFrame(sendLoop);
-    } catch (e: any) {
-      alert("Camera error: " + e.message);
-    }
+    fetchHistory();
   }, []);
 
-  const stopCamera = useCallback(() => {
-    stopRef.current = true;
-    if (animRef.current) { cancelAnimationFrame(animRef.current); animRef.current = null; }
-    streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null;
-    if (videoRef.current) videoRef.current.srcObject = null;
-    poseRef.current?.close(); poseRef.current = null;
-  }, []);
-
-  // ── Session control ─────────────────────────────────────────────────────────
-  const handleStart = async () => {
-    if (!assignmentId) return;
-    const token = localStorage.getItem("token");
+  const fetchHistory = async () => {
+    setLoading(true);
     try {
-      const res = await fetch("http://localhost:5000/session/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ assignmentId }),
+      const token = localStorage.getItem("token");
+      const response = await fetch("http://localhost:5000/session/history", {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error((await res.json()).message ?? "Failed to start session");
-      const data = await res.json();
-      setSessionId(data.session.id);
-      setIsActive(true);
 
-      // Re-create matcher with pinned index so a fresh session starts clean
-      matcherRef.current = new LiveMatcher(templateFramesRef.current, templateIdxRef.current);
-      repCountRef.current = 0;
-      setMatchResult({ similarity: 0, repCount: 0, status: "Perform the exercise" });
-      initPose();
-    } catch (e: any) {
-      alert(`Could not start session: ${e.message}`);
+      if (!response.ok) throw new Error("Failed to load session history");
+
+      const data = await response.json();
+      setSessions(data.sessions || []);
+    } catch (err: any) {
+      setError(err.message || "Something went wrong");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleEnd = async () => {
-    if (!sessionId) return;
-    const token = localStorage.getItem("token");
-    stopCamera();
-    setIsActive(false);
-
-    try {
-      await fetch("http://localhost:5000/session/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ sessionId }),
-      });
-    } catch (e) {
-      console.error("Failed to complete session", e);
-    }
-
-    const reps = repCountRef.current;
-    const mins = Math.floor(timer / 60), secs = timer % 60;
-    alert(`Session complete!\n\nReps: ${reps}\nDuration: ${mins}:${secs < 10 ? "0" : ""}${secs}`);
-    navigate("/patient");
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
   };
 
-  // ── Helpers ─────────────────────────────────────────────────────────────────
-  const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
+  const formatTime = (dateString: string) => {
+    return new Date(dateString).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
 
-  const simColour = (s: number) =>
-    s >= 55 ? "text-emerald-400" : s >= 35 ? "text-yellow-400" : "text-slate-400";
+  const formatDuration = (seconds?: number) => {
+    if (!seconds) return "0:00";
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
-  // ── Loading / error states ──────────────────────────────────────────────────
-  if (loadingData) {
+  if (loading) {
     return (
-      <div className="h-screen bg-slate-900 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="w-10 h-10 border-4 border-teal-500/30 border-t-teal-500 rounded-full animate-spin" />
       </div>
     );
   }
 
-  if (error) {
-    return (
-      <div className="h-screen bg-slate-900 flex flex-col items-center justify-center gap-4 text-white px-6 text-center">
-        <p className="text-red-400 text-lg font-medium">{error}</p>
+  return (
+    <div className="min-h-screen bg-[#F8FAFC] font-sans pb-12">
+      {/* Header */}
+      <nav className="bg-white px-6 py-4 flex items-center gap-4 sticky top-0 z-30 border-b border-slate-100 shadow-sm">
         <button
           onClick={() => navigate("/patient")}
-          className="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 rounded-xl font-semibold transition"
+          className="p-2 hover:bg-slate-50 rounded-lg text-slate-500 transition-colors"
         >
-          Back to Dashboard
+          <ChevronLeft size={20} />
         </button>
-      </div>
-    );
-  }
+        <h1 className="text-xl font-bold text-slate-900">Session History</h1>
+      </nav>
 
-  const prescription = assignment?.prescription ?? { sets: 3, repsPerSet: 10 };
-  const targetReps   = (prescription.sets ?? 3) * (prescription.repsPerSet ?? 10);
-
-  // ── Render ──────────────────────────────────────────────────────────────────
-  return (
-    <div className="h-screen bg-slate-900 flex flex-col md:flex-row overflow-hidden font-sans">
-
-      {/* ── CAMERA AREA ───────────────────────────────────────────────────── */}
-      <div className="flex-1 relative bg-black overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-slate-900/40 to-transparent z-10 pointer-events-none" />
-
-        <video
-          ref={videoRef}
-          className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
-          playsInline
-          muted
-          autoPlay
-        />
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 w-full h-full object-cover scale-x-[-1] z-10 pointer-events-none"
-        />
-
-        {/* Back button */}
-        <button
-          onClick={() => { stopCamera(); navigate("/patient"); }}
-          className="absolute top-4 left-4 z-20 flex items-center gap-1.5 px-3 py-2 bg-slate-800/80 hover:bg-slate-700 text-white rounded-xl text-sm font-medium transition"
-        >
-          <ChevronLeft size={16} /> Dashboard
-        </button>
-
-        {/* Similarity overlay */}
-        {isActive && (
-          <div className="absolute inset-0 z-20 flex items-end justify-center pb-8 pointer-events-none">
-            <div className="bg-slate-900/80 backdrop-blur-sm rounded-2xl px-6 py-3 flex items-center gap-4">
-              <div className={`text-4xl font-black ${simColour(matchResult.similarity)}`}>
-                {matchResult.similarity}%
-              </div>
-              <div className="border-l border-slate-600 pl-4">
-                <p className="text-white font-semibold text-sm leading-tight">{matchResult.status}</p>
-                <p className="text-slate-400 text-xs mt-0.5">Match Score</p>
-              </div>
-            </div>
+      <main className="max-w-2xl mx-auto px-4 py-8">
+        {error ? (
+          <div className="bg-red-50 border border-red-100 rounded-2xl p-6 text-center">
+            <AlertCircle size={32} className="mx-auto text-red-400 mb-2" />
+            <p className="text-red-700 font-medium">{error}</p>
+            <button
+              onClick={fetchHistory}
+              className="mt-4 text-sm font-bold text-red-600 hover:text-red-800"
+            >
+              Try Again
+            </button>
           </div>
-        )}
-      </div>
-
-      {/* ── SIDE PANEL ────────────────────────────────────────────────────── */}
-      <div className="w-full md:w-80 bg-slate-900 border-l border-slate-800 flex flex-col p-6 gap-5 overflow-y-auto">
-
-        {/* Header */}
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Activity size={18} className="text-teal-400" />
-            <span className="text-xs font-bold uppercase tracking-widest text-teal-400">Custom Exercise</span>
+        ) : sessions.length === 0 ? (
+          <div className="bg-white border rounded-2xl p-12 text-center shadow-sm">
+            <Activity size={48} className="mx-auto text-slate-200 mb-4" />
+            <h3 className="text-lg font-bold text-slate-900">No sessions yet</h3>
+            <p className="text-slate-500 mt-1 mb-6">Complete your first exercise to see your history here.</p>
+            <button
+              onClick={() => navigate("/patient")}
+              className="bg-teal-500 hover:bg-teal-600 text-white px-6 py-2.5 rounded-xl font-bold transition-all"
+            >
+              Go to Dashboard
+            </button>
           </div>
-          <h1 className="text-xl font-extrabold text-white leading-tight">
-            {template?.name ?? "Exercise"}
-          </h1>
-          {template?.description && (
-            <p className="text-slate-400 text-sm mt-1">{template.description}</p>
-          )}
-        </div>
-
-        {/* Prescription */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-slate-800 rounded-xl p-3 text-center">
-            <p className="text-2xl font-black text-white">{prescription.sets}</p>
-            <p className="text-[11px] text-slate-400 uppercase tracking-wide font-medium">Sets</p>
-          </div>
-          <div className="bg-slate-800 rounded-xl p-3 text-center">
-            <p className="text-2xl font-black text-white">{prescription.repsPerSet}</p>
-            <p className="text-[11px] text-slate-400 uppercase tracking-wide font-medium">Reps / Set</p>
-          </div>
-        </div>
-
-        {/* Live stats */}
-        <div className="bg-slate-800 rounded-2xl p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-slate-400 text-sm">
-              <Repeat2 size={16} />
-              <span>Reps Done</span>
-            </div>
-            <span className="text-white font-black text-xl">
-              {matchResult.repCount}
-              <span className="text-slate-500 font-normal text-sm"> / {targetReps}</span>
-            </span>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-slate-400 text-sm">
-              <Zap size={16} />
-              <span>Match</span>
-            </div>
-            <span className={`font-black text-xl ${simColour(matchResult.similarity)}`}>
-              {matchResult.similarity}%
-            </span>
-          </div>
-
-          {/* Progress bar */}
-          <div className="w-full bg-slate-700 rounded-full h-2">
-            <div
-              className="h-2 rounded-full transition-all duration-300 bg-gradient-to-r from-teal-500 to-emerald-400"
-              style={{ width: `${Math.min(100, (matchResult.repCount / Math.max(targetReps, 1)) * 100)}%` }}
-            />
-          </div>
-
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-slate-400">Timer</span>
-            <span className="text-white font-bold font-mono">{fmt(timer)}</span>
-          </div>
-        </div>
-
-        {/* Status message */}
-        {isActive && (
-          <div className={`rounded-xl px-4 py-3 text-sm font-medium text-center transition-all ${
-            matchResult.status.includes("✓")
-              ? "bg-emerald-500/20 text-emerald-300"
-              : matchResult.similarity > 35
-              ? "bg-teal-500/10 text-teal-300"
-              : "bg-slate-800 text-slate-400"
-          }`}>
-            {matchResult.status}
-          </div>
-        )}
-
-        <div className="flex-1" />
-
-        {/* Action button */}
-        {!isActive ? (
-          <button
-            onClick={handleStart}
-            className="w-full flex items-center justify-center gap-2 bg-teal-500 hover:bg-teal-600 text-white py-4 rounded-2xl font-bold text-base transition-all shadow-xl shadow-teal-500/20 active:scale-95"
-          >
-            <Play size={20} fill="white" />
-            Start Session
-          </button>
         ) : (
-          <button
-            onClick={handleEnd}
-            className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white py-4 rounded-2xl font-bold text-base transition-all shadow-xl shadow-red-500/20 active:scale-95"
-          >
-            <StopCircle size={20} />
-            End Session
-          </button>
-        )}
+          <div className="space-y-4">
+            {sessions.map((session) => (
+              <div
+                key={session._id}
+                onClick={() => navigate(`/patient/session/details/${session._id}`)}
+                className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-teal-200 transition-all cursor-pointer group"
+              >
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-lg group-hover:text-teal-700 transition-colors">
+                      {session.assignmentId?.exerciseId?.name ||
+                        session.assignmentId?.customTemplateId?.name ||
+                        "Exercise Session"}
+                    </h3>
+                    <div className="flex items-center gap-3 mt-1 text-slate-500 text-sm">
+                      <span className="flex items-center gap-1.5">
+                        <Calendar size={14} /> {formatDate(session.startTime)}
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <Clock size={14} /> {formatTime(session.startTime)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${session.status === 'completed' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
+                    }`}>
+                    {session.status}
+                  </div>
+                </div>
 
-        {/* Template info */}
-        <p className="text-center text-[11px] text-slate-600">
-          Template: {template?.frameCount} frames · {template?.durationSeconds}s ·{" "}
-          {templateIdxRef.current.length === FULL_BODY_IDX.length ? "Full Body" : "Upper Body"}
-        </p>
-      </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-slate-50 rounded-xl p-3">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mb-1">Reps</p>
+                    <div className="flex items-center gap-1.5 text-slate-900">
+                      <Dumbbell size={14} className="text-teal-500" />
+                      <span className="font-bold">{session.analytics?.repsCompleted ?? 0}</span>
+                    </div>
+                  </div>
+                  <div className="bg-slate-50 rounded-xl p-3">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mb-1">Form</p>
+                    <div className="flex items-center gap-1.5 text-slate-900">
+                      <Trophy size={14} className="text-amber-500" />
+                      <span className="font-bold">
+                        {session.analytics?.formQuality?.score ? `${Math.round(session.analytics.formQuality.score)}%` : "N/A"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="bg-slate-50 rounded-xl p-3 font-medium">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mb-1">Duration</p>
+                    <div className="flex items-center gap-1.5 text-slate-900">
+                      <Clock size={14} className="text-blue-500" />
+                      <span className="font-bold">{formatDuration(session.analytics?.totalDuration)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex items-center justify-end text-sm font-bold text-teal-600 gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  View Details <ArrowRight size={16} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
     </div>
   );
 };
 
-export default PatientCustomExercise;
+export default PatientSessionHistory;

@@ -106,9 +106,10 @@ export const findSessionById = async (id) => {
   return await Session.findById(id)
     .populate({
       path: 'assignmentId',
-      populate: {
-        path: 'exerciseId'
-      }
+      populate: [
+        { path: 'exerciseId' },
+        { path: 'customTemplateId', select: '-frames' }
+      ]
     })
     .populate('patientId');
 };
@@ -118,9 +119,10 @@ export const getSessionsByAssignment = async (assignmentId) => {
     .sort({ startTime: -1 })
     .populate({
       path: 'assignmentId',
-      populate: {
-        path: 'exerciseId'
-      }
+      populate: [
+        { path: 'exerciseId' },
+        { path: 'customTemplateId', select: '-frames' }
+      ]
     });
 };
 
@@ -130,17 +132,24 @@ export const getSessionsByPatient = async (patientId, limit = 10) => {
     .limit(limit)
     .populate({
       path: 'assignmentId',
-      populate: {
-        path: 'exerciseId'
-      }
+      populate: [
+        { path: 'exerciseId' },
+        { path: 'customTemplateId', select: '-frames' }
+      ]
     });
 };
 
 export const getActiveSession = async (patientId) => {
-  return await Session.findOne({ 
-    patientId, 
-    status: 'active' 
-  }).populate('assignmentId');
+  return await Session.findOne({
+    patientId,
+    status: 'active'
+  }).populate({
+    path: 'assignmentId',
+    populate: [
+      { path: 'exerciseId' },
+      { path: 'customTemplateId', select: '-frames' }
+    ]
+  });
 };
 
 export const updateSession = async (id, updateData) => {

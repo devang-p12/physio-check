@@ -27,7 +27,7 @@ const SessionDetails = () => {
         const data = await response.json();
         console.log('Session data:', JSON.stringify(data, null, 2));
         setSession(data);
-        
+
         // If session has timestamps and was tracked mode, fetch Google Fit data
         if (data.session?.startTime && data.session?.endTime) {
           // try doctor endpoint first (if viewing as doctor), else fallback to patient endpoint
@@ -102,7 +102,7 @@ const SessionDetails = () => {
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
+    return date.toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
@@ -146,7 +146,9 @@ const SessionDetails = () => {
             <span>Back</span>
           </button>
           <h1 className="text-2xl font-bold text-slate-900">
-            {session.session?.assignmentId?.exerciseId?.name || 'Session Details'}
+            {session.session?.assignmentId?.exerciseId?.name ||
+              session.session?.assignmentId?.customTemplateId?.name ||
+              'Session Details'}
           </h1>
           <p className="text-sm text-slate-500 mt-1">
             {formatDate(session.session.startTime)}
@@ -174,14 +176,14 @@ const SessionDetails = () => {
                     <span className="text-xs text-slate-500 font-medium">Started</span>
                   </div>
                   <p className="text-sm font-bold text-slate-900">
-                    {session.session?.startTime ? new Date(session.session.startTime).toLocaleTimeString('en-US', { 
-                      hour: '2-digit', 
+                    {session.session?.startTime ? new Date(session.session.startTime).toLocaleTimeString('en-US', {
+                      hour: '2-digit',
                       minute: '2-digit'
                     }) : 'N/A'}
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
-                    {session.session?.startTime ? new Date(session.session.startTime).toLocaleDateString('en-US', { 
-                      month: 'short', 
+                    {session.session?.startTime ? new Date(session.session.startTime).toLocaleDateString('en-US', {
+                      month: 'short',
                       day: 'numeric',
                       year: 'numeric'
                     }) : ''}
@@ -196,14 +198,14 @@ const SessionDetails = () => {
                       <span className="text-xs text-slate-500 font-medium">Ended</span>
                     </div>
                     <p className="text-sm font-bold text-slate-900">
-                      {new Date(session.session.endTime).toLocaleTimeString('en-US', { 
-                        hour: '2-digit', 
+                      {new Date(session.session.endTime).toLocaleTimeString('en-US', {
+                        hour: '2-digit',
                         minute: '2-digit'
                       })}
                     </p>
                     <p className="text-xs text-slate-500 mt-1">
-                      {new Date(session.session.endTime).toLocaleDateString('en-US', { 
-                        month: 'short', 
+                      {new Date(session.session.endTime).toLocaleDateString('en-US', {
+                        month: 'short',
                         day: 'numeric',
                         year: 'numeric'
                       })}
@@ -218,7 +220,7 @@ const SessionDetails = () => {
                     <span className="text-xs text-slate-500 font-medium">Duration</span>
                   </div>
                   <p className="text-2xl font-bold text-slate-900">
-                    {session.session?.startTime && session.session?.endTime 
+                    {session.session?.startTime && session.session?.endTime
                       ? formatDuration(Math.floor((new Date(session.session.endTime) - new Date(session.session.startTime)) / 1000))
                       : formatDuration(analytics?.totalDuration || 0)
                     }
@@ -296,7 +298,7 @@ const SessionDetails = () => {
                   {Object.entries(analytics.intensityZones).map(([zone, seconds]) => {
                     const total = Object.values(analytics.intensityZones).reduce((a, b) => a + b, 0);
                     const percentage = total > 0 ? (seconds / total) * 100 : 0;
-                    
+
                     const zoneColors = {
                       low: 'bg-blue-500',
                       moderate: 'bg-green-500',

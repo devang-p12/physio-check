@@ -37,13 +37,13 @@ export const startSession = async (req, res) => {
     }
 
     // Handle both populated and non-populated patientId
-    const assignmentPatientId = assignment.patientId._id 
-      ? assignment.patientId._id.toString() 
+    const assignmentPatientId = assignment.patientId._id
+      ? assignment.patientId._id.toString()
       : assignment.patientId.toString();
-    
+
     if (assignmentPatientId !== patientId) {
       console.log(`Authorization failed: assignment.patientId=${assignmentPatientId}, requestPatientId=${patientId}`);
-      return res.status(403).json({ 
+      return res.status(403).json({
         message: 'Not authorized to access this assignment'
       });
     }
@@ -114,7 +114,7 @@ export const startSession = async (req, res) => {
   } catch (error) {
     console.error('Error starting session:', error);
     console.error('Error stack:', error.stack);
-    return res.status(500).json({ 
+    return res.status(500).json({
       message: 'Internal server error',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -126,7 +126,7 @@ export const startSession = async (req, res) => {
  */
 export const completeSession = async (req, res) => {
   const patientId = req.user.id;
-  const { sessionId, googleFitAccessToken } = req.body;
+  const { sessionId, googleFitAccessToken, reps, formScore } = req.body;
 
   try {
     const session = await findSessionById(sessionId);
@@ -136,20 +136,20 @@ export const completeSession = async (req, res) => {
     }
 
     // Handle both populated and non-populated patientId
-    const sessionPatientId = session.patientId._id 
-      ? session.patientId._id.toString() 
+    const sessionPatientId = session.patientId._id
+      ? session.patientId._id.toString()
       : session.patientId.toString();
 
     if (sessionPatientId !== patientId) {
       console.log(`Authorization failed for session complete: session.patientId=${sessionPatientId}, requestPatientId=${patientId}`);
-      return res.status(403).json({ 
-        message: 'Not authorized to access this session' 
+      return res.status(403).json({
+        message: 'Not authorized to access this session'
       });
     }
 
     if (session.status !== 'active') {
-      return res.status(400).json({ 
-        message: 'Session is not active' 
+      return res.status(400).json({
+        message: 'Session is not active'
       });
     }
 
@@ -165,7 +165,21 @@ export const completeSession = async (req, res) => {
     const updatedSession = await findSessionById(sessionId);
 
     // Generate analytics
-    const analytics = generateSessionAnalytics(updatedSession);
+    const generatedAnalytics = generateSessionAnalytics(updatedSession);
+
+    // Merge generated analytics with client-provided metrics (reps, formScore)
+    // For camera sessions, sensorData will be empty, so generatedAnalytics might have an error.
+    // We create a fresh analytics object if needed.
+    const baseAnalytics = generatedAnalytics.error ? { totalDuration: Math.round((new Date() - new Date(updatedSession.startTime)) / 1000) } : generatedAnalytics;
+
+    const analytics = {
+      ...baseAnalytics,
+      repsCompleted: reps !== undefined ? Number(reps) : baseAnalytics.repsCompleted,
+      formQuality: {
+        ...(baseAnalytics.formQuality || {}),
+        score: formScore !== undefined ? Number(formScore) : baseAnalytics.formQuality?.score
+      }
+    };
 
     // Get previous sessions for comparison
     const previousSessions = await getSessionsByAssignment(session.assignmentId);
@@ -239,30 +253,26 @@ export const getSessionHistory = async (req, res) => {
 
   try {
     let sessions;
-    
+
     if (assignmentId) {
       // Get sessions for specific assignment
       sessions = await getSessionsByAssignment(assignmentId);
-      console.log('Found sessions for assignment:', sessions.length);
       // Filter by patient - handle populated patientId
       sessions = sessions.filter(s => {
         const sessionPatientId = s.patientId._id ? s.patientId._id.toString() : s.patientId.toString();
-        const matches = sessionPatientId === patientId;
-        console.log('Session:', s._id, 'patientId:', sessionPatientId, 'matches:', matches);
-        return matches;
+        return sessionPatientId === patientId;
       });
     } else {
       // Get all sessions for patient
-      sessions = await getSessionsByPatient(patientId, parseInt(limit));
-      console.log('Query result - sessions found:', sessions.length);
-      sessions.forEach(s => {
-        console.log('Session:', s._id, 'patientId:', s.patientId, 'status:', s.status, 'startTime:', s.startTime);
-      });
+      const limitVal = parseInt(limit);
+
+      // Let's check how getSessionsByPatient is implemented in the model
+      sessions = await getSessionsByPatient(patientId, limitVal);
     }
 
     console.log(`Returning ${sessions.length} sessions for patient ${patientId}`);
 
-    return res.json({ 
+    return res.json({
       sessions,
       count: sessions.length
     });
@@ -288,15 +298,15 @@ export const getSessionAnalytics = async (req, res) => {
     }
 
     // Handle both populated and non-populated patientId
-    const sessionPatientId = session.patientId._id 
-      ? session.patientId._id.toString() 
+    const sessionPatientId = session.patientId._id
+      ? session.patientId._id.toString()
       : session.patientId.toString();
 
     // Patients can only see their own sessions; doctors can see any session
     if (req.user.role !== 'doctor' && sessionPatientId !== patientId) {
       console.log(`Authorization failed for analytics: session.patientId=${sessionPatientId}, requestPatientId=${patientId}`);
-      return res.status(403).json({ 
-        message: 'Not authorized to access this session' 
+      return res.status(403).json({
+        message: 'Not authorized to access this session'
       });
     }
 
