@@ -14,6 +14,7 @@ import {
   Layers,
   BarChart2,
   CalendarDays,
+  PlusCircle,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
@@ -112,6 +113,22 @@ const DoctorDashboard = () => {
           </div>
 
           <div className="flex items-center gap-6">
+            <button
+              onClick={() => navigate("/doctor/calendar")}
+              className="hidden sm:flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-teal-600 transition-colors"
+            >
+              <Calendar size={18} />
+              Schedule
+            </button>
+
+            <button
+              onClick={() => navigate("/doctor/create-exercise")}
+              className="hidden sm:flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-teal-600 transition-colors"
+            >
+              <PlusCircle size={18} />
+              Create Exercise
+            </button>
+
             <button className="relative p-2 text-slate-400 hover:bg-slate-50 rounded-full transition-colors">
               <Bell size={20} />
               <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
@@ -152,7 +169,15 @@ const DoctorDashboard = () => {
             </p>
           </div>
 
+          {/* ── Header action buttons ── */}
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate("/doctor/create-exercise")}
+              className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-5 py-3 rounded-xl font-bold transition-all shadow-sm active:scale-95"
+            >
+              <PlusCircle size={18} className="text-teal-500" />
+              Create Exercise
+            </button>
             <button
               onClick={() => navigate("/doctor/calendar")}
               className="flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-xl shadow-teal-100 active:scale-95"
