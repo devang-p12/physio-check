@@ -9,6 +9,7 @@ import { Pose, Results, POSE_CONNECTIONS } from "@mediapipe/pose";
 import { Camera } from "@mediapipe/camera_utils";
 import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────────────────────────
@@ -87,13 +88,12 @@ class PoseNormalizer {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class DTW {
-  /** Visibility-weighted Euclidean distance between two pose frames */
+  /** Euclidean distance between two pose frames (no visibility filter — matches reference DTW) */
   static frameDistance(a: NormFrame, b: NormFrame): number {
     const n = Math.min(a.length, b.length);
     if (n === 0) return 1;
     let total = 0;
     for (let i = 0; i < n; i++) {
-      if (Math.min(a[i].visibility, b[i].visibility) < 0.3) continue;
       total += Math.sqrt((a[i].x-b[i].x)**2 + (a[i].y-b[i].y)**2 + (a[i].z-b[i].z)**2);
     }
     return total / n;
@@ -132,6 +132,11 @@ class LiveMatcher {
   private isCooldown = false;
   private readonly cooldownMs = 1500;
   private readonly repThreshold = 75;
+  // ── FPS sub-sampling ────────────────────────────────────────────────────
+  // TemplateProcessor records at 10 fps; throttle live feed to same rate.
+  private lastSampleMs = 0;
+  private readonly sampleIntervalMs = 100; // ≈ 10 fps
+  private _lastResult: LiveMatchResult | null = null;
 
   constructor(frames: NormFrame[]) {
     this.template = frames;
@@ -153,11 +158,19 @@ class LiveMatcher {
   processFrame(frame: NormFrame | null): LiveMatchResult {
     if (!frame) return { similarity: 0, repCount: this.repCount, status: "Detecting body..." };
 
+    const now = Date.now();
+    if (now - this.lastSampleMs < this.sampleIntervalMs) {
+      return this._lastResult ?? { similarity: 0, repCount: this.repCount, status: "Preparing..." };
+    }
+    this.lastSampleMs = now;
+
     this.buffer.push(this.smooth(frame));
     if (this.buffer.length > this.windowSize) this.buffer.shift();
 
-    if (this.buffer.length < this.template.length * 0.5)
-      return { similarity: 0, repCount: this.repCount, status: "Preparing..." };
+    if (this.buffer.length < Math.ceil(this.template.length * 0.5)) {
+      const r = { similarity: 0, repCount: this.repCount, status: "Preparing..." };
+      this._lastResult = r; return r;
+    }
 
     // Sub-sequence matching — 3 window sizes to handle speed variation
     const tLen = this.template.length;
@@ -185,7 +198,9 @@ class LiveMatcher {
     } else if (this.buffer.length >= tLen) {
       status = "Keep going";
     }
-    return { similarity: best, repCount: this.repCount, status };
+    const result = { similarity: best, repCount: this.repCount, status };
+    this._lastResult = result;
+    return result;
   }
 
   private triggerCooldown() {
@@ -196,7 +211,10 @@ class LiveMatcher {
     }, this.cooldownMs);
   }
 
-  reset() { this.repCount = 0; this.buffer = []; this.isCooldown = false; }
+  reset() {
+    this.repCount = 0; this.buffer = []; this.isCooldown = false;
+    this.lastSampleMs = 0; this._lastResult = null;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -215,7 +233,7 @@ class TemplateProcessor {
     this.pose.setOptions({ modelComplexity: 0, smoothLandmarks: true, minDetectionConfidence: 0.3, minTrackingConfidence: 0.3 });
     this.pose.onResults((r: Results) => {
       if (r.poseLandmarks) {
-        const n = PoseNormalizer.normalize(r.poseLandmarks);
+        const n = PoseNormalizer.normalize(r.poseLandmarks as any);
         if (n) this.series.push(n);
       }
       if (this.frameResolved) { const cb = this.frameResolved; this.frameResolved = null; cb(); }
@@ -229,7 +247,7 @@ class TemplateProcessor {
     await this.initPose();
     const video = await this.loadVideo(file);
     const duration = video.duration;
-    const fps = 5, interval = 1 / fps, total = Math.floor(duration * fps);
+    const fps = 10, interval = 1 / fps, total = Math.floor(duration * fps);
     const canvas = document.createElement("canvas");
     canvas.width = 480; canvas.height = 360;
     const ctx = canvas.getContext("2d")!;
@@ -387,36 +405,58 @@ const LivePosePreview = ({ onClose }: { onClose: () => void }) => {
 interface TemplateTesterProps { template: ExerciseTemplate; onClose: () => void; visible: boolean; }
 
 const TemplateTester = ({ template, onClose, visible }: TemplateTesterProps) => {
-  const videoRef  = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const cameraRef = useRef<Camera | null>(null);
+  const videoRef   = useRef<HTMLVideoElement>(null);
+  const canvasRef  = useRef<HTMLCanvasElement>(null);
+  const poseRef    = useRef<Pose | null>(null);
+  const streamRef  = useRef<MediaStream | null>(null);
+  const animRef    = useRef<number | null>(null);
+  const stopRef    = useRef(false);   // cancellation flag
   const matcherRef = useRef<LiveMatcher | null>(null);
+  const templateFramesRef = useRef<NormFrame[]>([]);
+  const repCountRef = useRef(0);
 
   const [testStage, setTestStage] = useState<TestStage>("idle");
-  const [status, setStatus] = useState("Initializing pose model...");
-  const [detected, setDetected] = useState(false);
+  const [status, setStatus]       = useState("Initializing pose model...");
+  const [detected, setDetected]   = useState(false);
   const [similarity, setSimilarity] = useState(0);
-  const [repCount, setRepCount] = useState(0);
-  const [bestSim, setBestSim] = useState(0);
-  const [history, setHistory] = useState<number[]>([]);
+  const [repCount, setRepCount]   = useState(0);
+  const [bestSim, setBestSim]     = useState(0);
+  const [history, setHistory]     = useState<number[]>([]);
   const [initialized, setInitialized] = useState(false);
 
-  // Build LiveMatcher whenever template changes
+  // ── helpers ──────────────────────────────────────────────────────────────
+  const stopLive = useCallback(() => {
+    stopRef.current = true;
+    if (animRef.current) { cancelAnimationFrame(animRef.current); animRef.current = null; }
+    streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null;
+    if (videoRef.current) { videoRef.current.srcObject = null; }
+    if (canvasRef.current) {
+      canvasRef.current.getContext("2d")?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    }
+    setDetected(false);
+  }, []);
+
+  // ── rebuild LiveMatcher when template changes ───────────────────────────
   useEffect(() => {
-    matcherRef.current = new LiveMatcher(template.frames.map(PoseNormalizer.deserialise));
+    const frames = template.frames.map((f: number[][]) =>
+      f.map(([x, y, z, v]) => ({ x, y, z, visibility: v ?? 1 }))
+    );
+    templateFramesRef.current = frames;
+    matcherRef.current = new LiveMatcher(frames);
   }, [template]);
 
-  // Stop camera + reset when hidden
+  // ── stop + reset when panel is hidden ────────────────────────────────────
   useEffect(() => {
-    if (!visible && cameraRef.current) {
-      cameraRef.current.stop(); cameraRef.current = null;
+    if (!visible) {
+      stopLive();
       setTestStage("idle"); setSimilarity(0); setBestSim(0);
-      setRepCount(0); setHistory([]); setDetected(false);
-      matcherRef.current?.reset();
+      setRepCount(0); setHistory([]);
+      matcherRef.current = new LiveMatcher(templateFramesRef.current);
+      repCountRef.current = 0;
     }
-  }, [visible]);
+  }, [visible, stopLive]);
 
-  // Init pose once on mount — onResults BEFORE initialize()
+  // ── initialise MediaPipe Pose exactly once on mount ──────────────────────
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -425,26 +465,32 @@ const TemplateTester = ({ template, onClose, visible }: TemplateTesterProps) => 
         pose.setOptions({ modelComplexity: 0, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
 
         pose.onResults((r: Results) => {
+          if (stopRef.current) return;
           const c = canvasRef.current, v = videoRef.current;
           if (!c || !v) return;
-          c.width = v.videoWidth || 640; c.height = v.videoHeight || 480;
-          const ctx = c.getContext("2d")!; ctx.clearRect(0,0,c.width,c.height);
+          c.width  = v.videoWidth  || 640;
+          c.height = v.videoHeight || 480;
+          const ctx = c.getContext("2d")!;
+          ctx.clearRect(0, 0, c.width, c.height);
 
           if (r.poseLandmarks) {
-            const norm = PoseNormalizer.normalize(r.poseLandmarks);
-            const res  = matcherRef.current?.processFrame(norm ?? null) ?? { similarity:0, repCount:0, status:"No matcher" };
-            const s = res.similarity;
-
-            setSimilarity(s);
-            setBestSim(prev => Math.max(prev, s));
-            setRepCount(res.repCount);
-            setHistory(prev => [...prev, s].slice(-60));
-            if (!cancelled) setStatus(res.status);
-
-            const col = s >= 75 ? "#10b981" : s >= 45 ? "#f59e0b" : "#ef4444";
-            drawConnectors(ctx, r.poseLandmarks, POSE_CONNECTIONS, { color: col, lineWidth: 3 });
-            drawLandmarks(ctx, r.poseLandmarks, { color: "#fff", fillColor: col, radius: 5 });
-            if (!cancelled) setDetected(true);
+            const norm = PoseNormalizer.normalize(r.poseLandmarks as any);
+            if (norm && matcherRef.current) {
+              const res = matcherRef.current.processFrame(norm);
+              if (!cancelled) {
+                setSimilarity(res.similarity);
+                setBestSim(prev => Math.max(prev, res.similarity));
+                setHistory(prev => [...prev, res.similarity].slice(-60));
+                setRepCount(res.repCount);
+                setStatus(res.status);
+                setDetected(true);
+              }
+              const col = res.similarity >= 75 ? "#10b981" : res.similarity >= 45 ? "#f59e0b" : "#ef4444";
+              drawConnectors(ctx, r.poseLandmarks, POSE_CONNECTIONS, { color: col, lineWidth: 3 });
+              drawLandmarks(ctx, r.poseLandmarks, { color: "#fff", fillColor: col, radius: 5 });
+            } else {
+              if (!cancelled) { setDetected(false); setStatus("Stand back so your full body is visible"); }
+            }
           } else {
             if (!cancelled) { setDetected(false); setStatus("Stand back so your full body is visible"); }
           }
@@ -452,36 +498,64 @@ const TemplateTester = ({ template, onClose, visible }: TemplateTesterProps) => 
 
         await pose.initialize();
         if (cancelled) return;
-        (videoRef as any)._pose = pose;
+        poseRef.current = pose;
         setInitialized(true);
         setStatus("Ready — press Start Test to begin");
-      } catch (e: any) { if (!cancelled) setStatus("Failed to load pose model: " + e.message); }
+      } catch (e: any) {
+        if (!cancelled) setStatus("Failed to load pose model: " + e.message);
+      }
     })();
-    return () => { cancelled = true; cameraRef.current?.stop(); };
+    return () => {
+      cancelled = true;
+      stopRef.current = true;
+      if (animRef.current) { cancelAnimationFrame(animRef.current); animRef.current = null; }
+      streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null;
+      poseRef.current?.close(); poseRef.current = null;
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── start live session ────────────────────────────────────────────────────
   const startTest = useCallback(async () => {
-    const pose: Pose | undefined = (videoRef as any)._pose;
-    if (!pose || !videoRef.current) return;
+    if (!poseRef.current || !videoRef.current) return;
     matcherRef.current?.reset();
     setSimilarity(0); setBestSim(0); setRepCount(0); setHistory([]); setDetected(false);
-    setStatus("Stand back so your full body is visible..."); setTestStage("running");
+    setStatus("Starting camera..."); setTestStage("running");
     try {
-      const cam = new Camera(videoRef.current, {
-        onFrame: async () => { if (videoRef.current) await pose.send({ image: videoRef.current }); },
-        width: 640, height: 480,
-      });
-      cameraRef.current = cam; await cam.start();
-    } catch (e: any) { setStatus("Camera error: " + e.message); setTestStage("idle"); }
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
+      streamRef.current = stream;
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+      stopRef.current = false;
+      const pose = poseRef.current;
+      const sendLoop = async () => {
+        if (stopRef.current) return;
+        if (videoRef.current && videoRef.current.readyState >= 2) {
+          await pose.send({ image: videoRef.current });
+        }
+        animRef.current = requestAnimationFrame(sendLoop);
+      };
+      animRef.current = requestAnimationFrame(sendLoop);
+      setStatus("Stand back so your full body is visible");
+    } catch (e: any) {
+      setStatus("Camera error: " + e.message); setTestStage("idle");
+    }
   }, []);
 
-  const stopTest = () => { cameraRef.current?.stop(); cameraRef.current = null; setTestStage("done"); setStatus("Session complete"); };
+  // ── stop session ──────────────────────────────────────────────────────────
+  const stopTest = useCallback(() => {
+    stopLive();
+    setTestStage("done"); setStatus("Session complete");
+  }, [stopLive]);
 
-  const restartTest = () => {
-    cameraRef.current?.stop(); cameraRef.current = null; matcherRef.current?.reset();
-    setTestStage("idle"); setSimilarity(0); setBestSim(0); setRepCount(0); setHistory([]);
-    setDetected(false); setStatus("Ready — press Start Test to begin");
-  };
+  // ── restart ───────────────────────────────────────────────────────────────
+  const restartTest = useCallback(() => {
+    stopLive();
+    matcherRef.current = new LiveMatcher(templateFramesRef.current);
+    repCountRef.current = 0;
+    setTestStage("idle"); setSimilarity(0); setBestSim(0);
+    setRepCount(0); setHistory([]);
+    setStatus("Ready — press Start Test to begin");
+  }, [stopLive]);
 
   const avgSim = history.length ? Math.round(history.reduce((a,b)=>a+b,0)/history.length) : 0;
   const simColor = similarity>=75 ? "text-emerald-400" : similarity>=45 ? "text-amber-400" : "text-red-400";
@@ -764,6 +838,8 @@ const CreateExercise = () => {
   const [recordingTime, setRecordingTime] = useState(0);
   const [loadedTestTemplate, setLoadedTestTemplate] = useState<ExerciseTemplate | null>(null);
   const [loadTemplateError, setLoadTemplateError]   = useState("");
+  const [saveStatus, setSaveStatus] = useState<"idle"|"saving"|"saved"|"error">("idle");
+  const [saveError, setSaveError]   = useState("");
 
   const testFileInputRef = useRef<HTMLInputElement>(null);
   const liveVideoRef     = useRef<HTMLVideoElement>(null);
@@ -774,6 +850,12 @@ const CreateExercise = () => {
   const processorRef     = useRef(new TemplateProcessor());
   const streamRef        = useRef<MediaStream | null>(null);
   const timerRef         = useRef<number | null>(null);
+  // ── recording skeleton overlay ──
+  const liveCanvasRef    = useRef<HTMLCanvasElement>(null);
+  const recPoseRef       = useRef<Pose | null>(null);
+  const recAnimRef       = useRef<number | null>(null);
+  const recCancelRef     = useRef(false);
+  const [recordingDetected, setRecordingDetected] = useState(false);
 
   useEffect(() => {
     if (stage === "recording") {
@@ -795,6 +877,7 @@ const CreateExercise = () => {
       const recorder = mimeType ? new MediaRecorder(stream,{mimeType}) : new MediaRecorder(stream);
       recorder.ondataavailable = e => { if(e.data.size>0) chunksRef.current.push(e.data); };
       recorder.onstop = () => {
+        stopRecordingSkeleton();
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType||"video/webm" });
         stream.getTracks().forEach(t=>t.stop()); streamRef.current = null;
         if (liveVideoRef.current) liveVideoRef.current.srcObject = null;
@@ -803,10 +886,84 @@ const CreateExercise = () => {
         setRecordedBlob(blob); setStage("recorded");
       };
       recorder.start(1000); mediaRecorderRef.current = recorder; setStage("recording");
+
+      // ── start live skeleton overlay (non-blocking) ──
+      recCancelRef.current = false;
+      (async () => {
+        try {
+          const pose = new Pose({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}` });
+          pose.setOptions({ modelComplexity: 0, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+          pose.onResults((r: Results) => {
+            if (recCancelRef.current) return;
+            const c = liveCanvasRef.current, v = liveVideoRef.current;
+            if (!c || !v) return;
+            c.width = v.videoWidth || 1280; c.height = v.videoHeight || 720;
+            const ctx = c.getContext("2d")!;
+            ctx.clearRect(0, 0, c.width, c.height);
+            if (r.poseLandmarks) {
+              drawConnectors(ctx, r.poseLandmarks, POSE_CONNECTIONS, { color: "#14b8a6", lineWidth: 3 });
+              drawLandmarks(ctx,  r.poseLandmarks, { color: "#fff", fillColor: "#14b8a6", radius: 5 });
+              setRecordingDetected(true);
+            } else {
+              setRecordingDetected(false);
+            }
+          });
+          await pose.initialize();
+          if (recCancelRef.current) { pose.close(); return; }
+          recPoseRef.current = pose;
+          const sendLoop = async () => {
+            if (recCancelRef.current) return;
+            if (liveVideoRef.current && liveVideoRef.current.readyState >= 2) {
+              await pose.send({ image: liveVideoRef.current });
+            }
+            recAnimRef.current = requestAnimationFrame(sendLoop);
+          };
+          recAnimRef.current = requestAnimationFrame(sendLoop);
+        } catch (skErr) { console.warn("Recording skeleton error:", skErr); }
+      })();
     } catch (e: any) { setErrorMsg("Camera access denied: "+e.message); setStage("error"); }
   };
 
+  const stopRecordingSkeleton = () => {
+    recCancelRef.current = true;
+    if (recAnimRef.current) { cancelAnimationFrame(recAnimRef.current); recAnimRef.current = null; }
+    recPoseRef.current?.close(); recPoseRef.current = null;
+    setRecordingDetected(false);
+    if (liveCanvasRef.current) {
+      const ctx = liveCanvasRef.current.getContext("2d");
+      ctx?.clearRect(0, 0, liveCanvasRef.current.width, liveCanvasRef.current.height);
+    }
+  };
+
   const stopRecording = () => mediaRecorderRef.current?.stop();
+
+  const saveToLibrary = async () => {
+    if (!template) return;
+    const token = localStorage.getItem("token");
+    setSaveStatus("saving"); setSaveError("");
+    try {
+      const res = await fetch("http://localhost:5000/doctor/custom-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({
+          name: template.name,
+          description: template.description,
+          category: template.category,
+          frameCount: template.frameCount,
+          durationSeconds: template.durationSeconds,
+          frames: template.frames,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message ?? "Save failed");
+      }
+      setSaveStatus("saved");
+    } catch (e: any) {
+      setSaveError(e.message ?? "Unknown error");
+      setSaveStatus("error");
+    }
+  };
 
   const handleFileUpload = (file: File) => {
     if (!file) return;
@@ -831,13 +988,14 @@ const CreateExercise = () => {
         createdAt: new Date().toISOString(),
         frameCount: series.length,
         durationSeconds: Math.round(duration),
-        frames: series.map(PoseNormalizer.serialise),   // [x,y,z,vis][]
+        frames: series.map((frame: any[]) => frame.map((lm: any) => [lm.x, lm.y, lm.z, lm.visibility ?? 1])),
       });
       setStage("done");
     } catch (e: any) { setErrorMsg(e.message||"Processing failed."); setStage("error"); }
   };
 
   const reset = () => {
+    stopRecordingSkeleton();
     streamRef.current?.getTracks().forEach(t=>t.stop()); streamRef.current = null;
     if (liveVideoRef.current) liveVideoRef.current.srcObject = null;
     if (playbackVideoRef.current) { playbackVideoRef.current.src=""; playbackVideoRef.current.controls=false; }
@@ -893,6 +1051,7 @@ const CreateExercise = () => {
         )}
 
         <video ref={liveVideoRef} className="absolute inset-0 w-full h-full object-cover" style={{display:stage==="recording"?"block":"none"}} autoPlay playsInline muted/>
+        <canvas ref={liveCanvasRef} className="absolute inset-0 w-full h-full object-cover z-10 pointer-events-none" style={{display:stage==="recording"?"block":"none"}}/>
         <video ref={playbackVideoRef} className="absolute inset-0 w-full h-full object-contain" style={{display:["recorded","processing","done","error"].includes(stage)?"block":"none"}} playsInline/>
 
         {stage==="recording" && (
@@ -901,6 +1060,12 @@ const CreateExercise = () => {
               <span className="w-2 h-2 bg-white rounded-full"/> REC
             </div>
             <div className="bg-slate-900/80 backdrop-blur-sm text-white text-sm font-mono font-bold px-4 py-2 rounded-full">{formatTime(recordingTime)}</div>
+            <div className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-full backdrop-blur-sm transition-colors ${
+              recordingDetected ? "bg-teal-500/90 text-white" : "bg-slate-800/80 text-slate-400"
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${recordingDetected ? "bg-white" : "bg-slate-500"}`}/>
+              {recordingDetected ? "Pose detected" : "Looking for body…"}
+            </div>
           </div>
         )}
         {stage==="recording" && (
@@ -1079,6 +1244,25 @@ const CreateExercise = () => {
               className="w-full bg-teal-500 hover:bg-teal-600 text-white text-base font-bold py-4 rounded-2xl shadow-lg shadow-teal-100 transition-all active:scale-95 flex items-center justify-center gap-3">
               <Download size={20}/> Export Template JSON
             </button>
+            {/* ── Save to Library ── */}
+            {saveStatus !== "saved" && (
+              <button
+                onClick={saveToLibrary}
+                disabled={saveStatus==="saving"}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-sm font-bold py-3 rounded-2xl transition-all active:scale-95 flex items-center justify-center gap-2">
+                {saveStatus==="saving"
+                  ? <><div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/> Saving...</>
+                  : <><CheckCircle2 size={18}/> Save to Doctor Library</>}
+              </button>
+            )}
+            {saveStatus==="saved" && (
+              <div className="w-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-semibold py-3 rounded-2xl flex items-center justify-center gap-2">
+                <CheckCircle2 size={16}/> Saved to library — assign it from the Assign Exercise page
+              </div>
+            )}
+            {saveStatus==="error" && (
+              <p className="text-red-500 text-xs text-center">{saveError}</p>
+            )}
             <button onClick={()=>setShowTemplateTester(true)}
               className="w-full bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold py-3 rounded-2xl transition-all active:scale-95 flex items-center justify-center gap-2">
               <Repeat2 size={18}/> Test This Template Live

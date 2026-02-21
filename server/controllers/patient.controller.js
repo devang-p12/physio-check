@@ -62,9 +62,15 @@ export const getTodaysExercises = async (req, res) => {
       calendar,
       exercises: todaysExercises.map(exercise => ({
         id: exercise._id.toString(),
-        doctorId: exercise.doctorId ? exercise.doctorId._id.toString() : exercise.doctorId.toString(),
-        patientId: exercise.patientId ? exercise.patientId._id.toString() : exercise.patientId.toString(),
-        exerciseId: exercise.exerciseId ? exercise.exerciseId._id.toString() : exercise.exerciseId.toString(),
+        doctorId: exercise.doctorId
+          ? (exercise.doctorId._id ? exercise.doctorId._id.toString() : exercise.doctorId.toString())
+          : null,
+        patientId: exercise.patientId
+          ? (exercise.patientId._id ? exercise.patientId._id.toString() : exercise.patientId.toString())
+          : null,
+        exerciseId: exercise.exerciseId
+          ? (exercise.exerciseId._id ? exercise.exerciseId._id.toString() : exercise.exerciseId.toString())
+          : null,
         date: exercise.date,
         prescription: JSON.parse(exercise.prescription),
         completed: exercise.completed,
@@ -81,7 +87,20 @@ export const getTodaysExercises = async (req, res) => {
           reps: exercise.exerciseId.reps,
           duration: exercise.exerciseId.duration,
           description: exercise.exerciseId.description
-        } : null
+        } : null,
+        // Custom exercise template info (no frames — just metadata for the card)
+        customTemplateId: exercise.customTemplateId
+          ? (exercise.customTemplateId._id
+              ? exercise.customTemplateId._id.toString()
+              : exercise.customTemplateId.toString())
+          : null,
+        customTemplate: exercise.customTemplateId && exercise.customTemplateId._id ? {
+          id: exercise.customTemplateId._id.toString(),
+          name: exercise.customTemplateId.name,
+          description: exercise.customTemplateId.description,
+          category: exercise.customTemplateId.category,
+          durationSeconds: exercise.customTemplateId.durationSeconds,
+        } : null,
       }))
     });
   } catch (error) {
@@ -115,7 +134,12 @@ export const getAssignment = async (req, res) => {
         reps: assignment.exerciseId.reps,
         duration: assignment.exerciseId.duration,
         description: assignment.exerciseId.description
-      } : null
+      } : null,
+      customTemplateId: assignment.customTemplateId
+        ? (assignment.customTemplateId._id
+            ? assignment.customTemplateId._id.toString()
+            : assignment.customTemplateId.toString())
+        : null,
     } });
   } catch (error) {
     console.error('Error in getAssignment:', error);

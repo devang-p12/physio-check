@@ -14,7 +14,12 @@ const assignmentSchema = new mongoose.Schema({
   exerciseId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Exercise',
-    required: true
+    // Not required for custom-template exercises
+  },
+  // Present only for custom-template exercises created via CreateExercise
+  customTemplateId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CustomExerciseTemplate',
   },
   date: {
     type: Date,
@@ -64,13 +69,15 @@ export const findAssignmentById = async (id) => {
   return await Assignment.findById(id)
     .populate('doctorId')
     .populate('patientId')
-    .populate('exerciseId');
+    .populate('exerciseId')
+    .populate('customTemplateId', '-frames');
 };
 
 export const getAssignmentsByPatient = async (patientId) => {
   return await Assignment.find({ patientId })
     .populate('doctorId')
     .populate('exerciseId')
+    .populate('customTemplateId', '-frames')  // no frames in list view
     .sort({ date: -1 });
 };
 

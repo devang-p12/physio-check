@@ -9,6 +9,7 @@ import {
   Calendar,
   Target,
   ChevronRight,
+  Cpu,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../api";
@@ -23,6 +24,7 @@ const AssignExercise = () => {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [exerciseLibrary, setExerciseLibrary] = useState([]);
+  const [customTemplates, setCustomTemplates] = useState([]);
 
   // 🔹 Date handling
   const today = new Date().toISOString().split("T")[0];
@@ -33,6 +35,9 @@ const AssignExercise = () => {
 
   const filteredLibrary = exerciseLibrary.filter((ex) =>
     ex.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  const filteredCustom = customTemplates.filter((t) =>
+    t.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   // 🔹 Fetch patient info and exercises
@@ -58,11 +63,16 @@ const AssignExercise = () => {
         if (exerciseData.exercises && exerciseData.exercises.length > 0) {
           setExerciseLibrary(exerciseData.exercises);
         } else {
-          // Seed exercises if none exist
-          const seededData = await apiFetch("/doctor/seed-exercises", {
-            method: "POST",
-          });
+          const seededData = await apiFetch("/doctor/seed-exercises", { method: "POST" });
           setExerciseLibrary(seededData.exercises);
+        }
+
+        // Fetch doctor's custom exercise templates
+        try {
+          const customData = await apiFetch("/doctor/custom-templates");
+          setCustomTemplates(customData.templates || []);
+        } catch (_) {
+          // custom templates are optional — fail silently
         }
       } catch (err) {
         console.error(err);
@@ -73,10 +83,19 @@ const AssignExercise = () => {
   }, [patientId, navigate]);
 
   const addExercise = (exercise) => {
-    if (!selectedExercises.find((e) => e._id === exercise._id)) {
+    if (!selectedExercises.find((e) => e._id === exercise._id && !e.isCustom)) {
       setSelectedExercises([
         ...selectedExercises,
-        { ...exercise, sets: 3, reps: exercise.reps || 10, tolerance: 0 },
+        { ...exercise, sets: 3, reps: exercise.reps || 10, tolerance: 0, isCustom: false },
+      ]);
+    }
+  };
+
+  const addCustomTemplate = (tmpl) => {
+    if (!selectedExercises.find((e) => e._id === tmpl.id && e.isCustom)) {
+      setSelectedExercises([
+        ...selectedExercises,
+        { _id: tmpl.id, name: tmpl.name, description: tmpl.description, sets: 3, reps: 10, tolerance: 0, isCustom: true },
       ]);
     }
   };
@@ -105,16 +124,32 @@ const AssignExercise = () => {
     setLoading(true);
     try {
       for (const ex of selectedExercises) {
-        await apiFetch("/doctor/assign-exercise", {
-          method: "POST",
-          body: JSON.stringify({
-            patientId,
-            exerciseId: ex._id,
-            prescription: { sets: ex.sets, repsPerSet: ex.reps, tolerance: ex.tolerance },
-            date: startDate,
-            endDate: endDate,
-          }),
-        });
+        if (ex.isCustom) {
+          // custom exercise template
+          await apiFetch("/doctor/assign-custom-exercise", {
+            method: "POST",
+            body: JSON.stringify({
+              patientId,
+              customTemplateId: ex._id,
+              sets: ex.sets,
+              repsPerSet: ex.reps,
+              date: startDate,
+              endDate: endDate,
+            }),
+          });
+        } else {
+          // standard exercise
+          await apiFetch("/doctor/assign-exercise", {
+            method: "POST",
+            body: JSON.stringify({
+              patientId,
+              exerciseId: ex._id,
+              prescription: { sets: ex.sets, repsPerSet: ex.reps, tolerance: ex.tolerance },
+              date: startDate,
+              endDate: endDate,
+            }),
+          });
+        }
       }
       alert("Exercise plan assigned successfully");
       navigate("/doctor");
@@ -208,6 +243,43 @@ const AssignExercise = () => {
                 </div>
               ))}
             </div>
+
+            {/* Custom exercise templates */}
+            {filteredCustom.length > 0 && (
+              <div className="mt-8">
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-4">
+                  <Cpu size={18} className="text-emerald-600" />
+                  Custom Recorded Exercises
+                  <span className="text-xs font-normal bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{filteredCustom.length}</span>
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredCustom.map((tmpl) => (
+                    <div
+                      key={tmpl.id}
+                      className="group bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 hover:shadow-md transition-all flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="flex justify-between items-start mb-4">
+                          <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
+                            <Cpu size={22} />
+                          </div>
+                          <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">Custom</span>
+                        </div>
+                        <h3 className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">{tmpl.name}</h3>
+                        <p className="text-sm text-slate-500 mt-1">{tmpl.description || tmpl.category}</p>
+                        <p className="text-xs text-slate-400 mt-1">{tmpl.frameCount} frames · {tmpl.durationSeconds}s</p>
+                      </div>
+                      <button
+                        onClick={() => addCustomTemplate(tmpl)}
+                        className="mt-5 w-full py-2.5 bg-slate-50 hover:bg-emerald-600 hover:text-white text-slate-700 font-semibold rounded-xl flex items-center justify-center gap-2 transition-all"
+                      >
+                        <Plus size={18} /> Add to Plan
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* RIGHT: Plan Builder */}

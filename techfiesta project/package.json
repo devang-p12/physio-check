@@ -1,0 +1,14 @@
+{
+  "name": "live-physio-validation",
+  "version": "1.0.0",
+  "description": "Live Physiotherapy Rep Validation System",
+  "main": "main.js",
+  "scripts": {
+    "start": "npx serve ."
+  },
+  "dependencies": {
+    "@mediapipe/pose": "^0.5.1675469404",
+    "@mediapipe/camera_utils": "^0.4.1675466862",
+    "@mediapipe/drawing_utils": "^0.4.1675466139"
+  }
+}
