@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Activity,
   Users,
@@ -6,20 +6,39 @@ import {
   LogOut,
   Search,
   Bell,
-  Plus,
   ChevronRight,
   TrendingUp,
   UserPlus,
-  MoreHorizontal
+  Flame,
+  Clock,
+  Layers,
+  BarChart2,
+  CalendarDays,
+  PlusCircle,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
 
+// ─── helpers ───────────────────────────────────────────────
+function formatLastOnline(date: string | null | undefined): string {
+  if (!date) return "Never";
+  const diff = Date.now() - new Date(date).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return "Yesterday";
+  return `${days}d ago`;
+}
+
+// ─── component ─────────────────────────────────────────────
 const DoctorDashboard = () => {
   const navigate = useNavigate();
   const doctorName = localStorage.getItem("name") || "Doctor";
 
-  const [patients, setPatients] = useState([]);
+  const [patients, setPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
@@ -31,13 +50,7 @@ const DoctorDashboard = () => {
     setLoading(true);
     try {
       const data = await apiFetch("/doctor/patients");
-      const enrichedPatients = (data.patients || []).map((p) => ({
-        ...p,
-        progress: Math.floor(Math.random() * 100), // Real logic would compute this
-        lastSeen: "2 hours ago",
-        status: Math.random() > 0.3 ? "On Track" : "Delayed",
-      }));
-      setPatients(enrichedPatients);
+      setPatients(data.patients || []);
     } catch (err) {
       console.error("Failed to fetch patients", err);
     }
@@ -46,43 +59,48 @@ const DoctorDashboard = () => {
 
   const handleLogout = () => {
     localStorage.clear();
-    navigate("/login");
+    window.location.replace("/login");
   };
 
   const filteredPatients = patients.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
   );
 
+  // ── real computed stats ──
+  const totalPatients = patients.length;
+  const activePlansTotal = patients.reduce((sum, p) => sum + (p.activePlans ?? 0), 0);
+  const todaySessionsTotal = patients.reduce((sum, p) => sum + (p.todaySessionCount ?? 0), 0);
+
   const stats = [
     {
       label: "Total Patients",
-      value: patients.length,
+      value: totalPatients,
       icon: Users,
       color: "text-blue-600",
       bg: "bg-blue-100/50",
-      trend: "+4 this week",
+      sub: `${activePlansTotal} active plans`,
     },
     {
       label: "Active Plans",
-      value: patients.length, // Logic kept intact
+      value: activePlansTotal,
       icon: Activity,
       color: "text-emerald-600",
       bg: "bg-emerald-100/50",
-      trend: "85% completion",
+      sub: "across all patients",
     },
     {
       label: "Today's Sessions",
-      value: "12", // Logic kept intact
+      value: todaySessionsTotal,
       icon: Calendar,
       color: "text-violet-600",
       bg: "bg-violet-100/50",
-      trend: "3 remaining",
+      sub: "completed today",
     },
   ];
 
   return (
     <div className="min-h-screen bg-[#f8fafc] font-sans text-slate-900">
-      {/* NAVBAR */}
+      {/* ── NAVBAR ── */}
       <nav className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-6 flex justify-between h-16 items-center">
           <div className="flex items-center gap-2.5">
@@ -95,22 +113,40 @@ const DoctorDashboard = () => {
           </div>
 
           <div className="flex items-center gap-6">
+            <button
+              onClick={() => navigate("/doctor/calendar")}
+              className="hidden sm:flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-teal-600 transition-colors"
+            >
+              <Calendar size={18} />
+              Schedule
+            </button>
+
+            <button
+              onClick={() => navigate("/doctor/create-exercise")}
+              className="hidden sm:flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-teal-600 transition-colors"
+            >
+              <PlusCircle size={18} />
+              Create Exercise
+            </button>
+
             <button className="relative p-2 text-slate-400 hover:bg-slate-50 rounded-full transition-colors">
               <Bell size={20} />
-              <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+              <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
             </button>
 
             <div className="flex items-center gap-3 pl-6 border-l">
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-bold leading-none">Dr. {doctorName}</p>
-                <p className="text-[11px] font-medium text-slate-400 mt-1 uppercase tracking-wider">Physiotherapist</p>
+                <p className="text-[11px] font-medium text-slate-400 mt-1 uppercase tracking-wider">
+                  Physiotherapist
+                </p>
               </div>
               <img
                 src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${doctorName}`}
                 alt="Doctor"
                 className="w-10 h-10 rounded-xl border-2 border-white shadow-sm"
               />
-              <button 
+              <button
                 onClick={handleLogout}
                 className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
                 title="Logout"
@@ -122,35 +158,57 @@ const DoctorDashboard = () => {
         </div>
       </nav>
 
-      {/* MAIN */}
+      {/* ── MAIN ── */}
       <main className="max-w-7xl mx-auto px-6 py-10">
         {/* HEADER */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
           <div>
             <h1 className="text-3xl font-black tracking-tight">Doctor Dashboard</h1>
-            <p className="text-slate-500 font-medium">Monitoring {patients.length} active recovery tracks</p>
+            <p className="text-slate-500 font-medium">
+              Monitoring {totalPatients} active recovery track{totalPatients !== 1 ? "s" : ""}
+            </p>
           </div>
 
-          <button
-            onClick={() => navigate("/doctor/add-patient")}
-            className="flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-xl shadow-slate-200 active:scale-95"
-          >
-            <UserPlus size={18} />
-            Add New Patient
-          </button>
+          {/* ── Header action buttons ── */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate("/doctor/create-exercise")}
+              className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-5 py-3 rounded-xl font-bold transition-all shadow-sm active:scale-95"
+            >
+              <PlusCircle size={18} className="text-teal-500" />
+              Create Exercise
+            </button>
+            <button
+              onClick={() => navigate("/doctor/calendar")}
+              className="flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-xl shadow-teal-100 active:scale-95"
+            >
+              <CalendarDays size={18} />
+              View Calendar
+            </button>
+            <button
+              onClick={() => navigate("/doctor/add-patient")}
+              className="flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-xl shadow-slate-200 active:scale-95"
+            >
+              <UserPlus size={18} />
+              Add New Patient
+            </button>
+          </div>
         </div>
 
         {/* STATS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
           {stats.map((stat, i) => (
-            <div key={i} className="group bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all">
+            <div
+              key={i}
+              className="group bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all"
+            >
               <div className="flex justify-between items-start mb-4">
                 <div className={`p-3 rounded-xl ${stat.bg} ${stat.color} transition-transform group-hover:scale-110`}>
                   <stat.icon size={24} />
                 </div>
                 <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">
                   <TrendingUp size={12} />
-                  {stat.trend}
+                  {stat.sub}
                 </div>
               </div>
               <h3 className="text-3xl font-black tracking-tight">{stat.value}</h3>
@@ -167,7 +225,7 @@ const DoctorDashboard = () => {
               {filteredPatients.length}
             </span>
           </div>
-          
+
           <div className="relative w-full sm:w-72">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input
@@ -182,7 +240,7 @@ const DoctorDashboard = () => {
         {/* PATIENT GRID */}
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 space-y-4">
-            <div className="w-10 h-10 border-4 border-teal-500/20 border-t-teal-500 rounded-full animate-spin"></div>
+            <div className="w-10 h-10 border-4 border-teal-500/20 border-t-teal-500 rounded-full animate-spin" />
             <p className="text-slate-400 font-medium tracking-wide">Fetching patient records...</p>
           </div>
         ) : filteredPatients.length === 0 ? (
@@ -191,70 +249,106 @@ const DoctorDashboard = () => {
               <Users size={32} />
             </div>
             <h3 className="text-lg font-bold text-slate-900">No patients found</h3>
-            <p className="text-slate-500 max-w-xs mx-auto mt-1">Try adjusting your search or add a new patient to your list.</p>
+            <p className="text-slate-500 max-w-xs mx-auto mt-1">
+              Try adjusting your search or add a new patient to your list.
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredPatients.map((patient) => (
-              <div
-                key={patient.id}
-                className="group bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 overflow-hidden"
-              >
-                <div className="p-6">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 font-bold text-xl group-hover:bg-teal-50 group-hover:text-teal-600 transition-colors">
-                      {patient.name.charAt(0)}
+            {filteredPatients.map((patient) => {
+              const streak = patient.streak ?? 0;
+              const activePlans = patient.activePlans ?? 0;
+              const totalSessions = patient.totalSessions ?? 0;
+              const todayCount = patient.todaySessionCount ?? 0;
+              const lastOnlineFmt = formatLastOnline(patient.lastOnline);
+
+              return (
+                <div
+                  key={patient.id}
+                  className="group bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 overflow-hidden"
+                >
+                  <div className="p-6">
+                    {/* Avatar + name row */}
+                    <div className="flex items-center gap-3 mb-5">
+                      <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-500 font-bold text-xl group-hover:bg-teal-50 group-hover:text-teal-600 transition-colors shrink-0">
+                        {patient.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="font-bold text-base leading-tight truncate group-hover:text-teal-700 transition-colors">
+                          {patient.name}
+                        </h3>
+                        <p className="text-xs text-slate-400 truncate">{patient.email}</p>
+                      </div>
+                      {streak > 0 && (
+                        <div className={`ml-auto shrink-0 flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full ${streak >= 3 ? "bg-orange-50 text-orange-600" : "bg-slate-100 text-slate-500"}`}>
+                          <Flame size={12} />
+                          {streak}
+                        </div>
+                      )}
                     </div>
-                    <button className="text-slate-300 hover:text-slate-600 transition-colors">
-                      <MoreHorizontal size={20} />
-                    </button>
+
+                    {/* Stats row */}
+                    <div className="grid grid-cols-3 gap-3 mb-5">
+                      <div className="bg-slate-50 rounded-xl p-3 text-center">
+                        <Layers size={14} className="mx-auto text-teal-500 mb-1" />
+                        <p className="text-base font-black text-slate-800">{activePlans}</p>
+                        <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">Plans</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-xl p-3 text-center">
+                        <Activity size={14} className="mx-auto text-violet-500 mb-1" />
+                        <p className="text-base font-black text-slate-800">{totalSessions}</p>
+                        <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">Sessions</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-xl p-3 text-center">
+                        <Calendar size={14} className="mx-auto text-emerald-500 mb-1" />
+                        <p className="text-base font-black text-slate-800">{todayCount}</p>
+                        <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">Today</p>
+                      </div>
+                    </div>
+
+                    {/* Last online */}
+                    <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-5">
+                      <Clock size={11} />
+                      <span>Last online: {lastOnlineFmt}</span>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex gap-2">
+                      <button
+                        className="flex-[3] bg-teal-50 hover:bg-teal-100 text-teal-700 py-3 rounded-xl text-xs font-bold transition-colors"
+                        onClick={() => navigate(`/doctor/assign?patientId=${patient.id}`)}
+                      >
+                        Assign Exercise
+                      </button>
+                      <button
+                        onClick={() => navigate(`/doctor/patient/${patient.id}/report`)}
+                        title="Generate Report"
+                        className="flex items-center justify-center gap-1 px-3 border border-teal-200 hover:bg-teal-50 text-teal-600 rounded-xl transition-all text-xs font-bold"
+                      >
+                        <BarChart2 size={15} />
+                      </button>
+                      <button
+                        onClick={() => navigate(`/doctor/patient/${patient.id}`)}
+                        className="flex items-center justify-center border border-slate-100 hover:bg-slate-50 text-slate-400 hover:text-slate-600 rounded-xl px-3 transition-all"
+                      >
+                        <ChevronRight size={18} />
+                      </button>
+                    </div>
                   </div>
 
-                  <h3 className="font-bold text-lg group-hover:text-teal-700 transition-colors">{patient.name}</h3>
-                  <p className="text-xs font-medium text-slate-400 mb-6">{patient.email}</p>
-
-                  {/* Progress Section */}
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-end">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Recovery Progress</span>
-                      <span className="text-sm font-black text-slate-700">{patient.progress}%</span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                      <div
-                        className="bg-gradient-to-r from-teal-500 to-emerald-400 h-full rounded-full transition-all duration-1000"
-                        style={{ width: `${patient.progress}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex gap-3 mt-8">
-                    <button
-                      className="flex-[3] bg-teal-50 hover:bg-teal-100 text-teal-700 py-3 rounded-xl text-xs font-bold transition-colors"
-                      onClick={() => navigate(`/doctor/assign?patientId=${patient.id}`)}
-                    >
-                      Assign Exercise
-                    </button>
-                    <button 
-                       onClick={() => navigate(`/doctor/patient/${patient.id}`)} // Added logic for a detail view
-                       className="flex-1 flex items-center justify-center border border-slate-100 hover:bg-slate-50 text-slate-400 hover:text-slate-600 rounded-xl transition-all"
-                    >
-                      <ChevronRight size={18} />
-                    </button>
+                  {/* Footer */}
+                  <div className="px-6 py-3 bg-slate-50/60 border-t border-slate-100 flex justify-between items-center">
+                    <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-slate-400 tracking-tight">
+                      <div className={`w-1.5 h-1.5 rounded-full ${activePlans > 0 ? "bg-emerald-500" : "bg-slate-300"}`} />
+                      {activePlans > 0 ? "Active Plan" : "No Plan"}
+                    </span>
+                    {streak >= 3 && (
+                      <span className="text-[10px] font-bold text-orange-500">🔥 {streak}-day streak</span>
+                    )}
                   </div>
                 </div>
-
-                <div className="px-6 py-4 bg-slate-50/50 border-t border-slate-50 flex justify-between items-center">
-                  <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-slate-400 tracking-tight">
-                    <div className={`w-1.5 h-1.5 rounded-full ${patient.status === 'On Track' ? 'bg-emerald-500' : 'bg-amber-500'}`}></div>
-                    {patient.status}
-                  </span>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">
-                    Seen {patient.lastSeen}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>
