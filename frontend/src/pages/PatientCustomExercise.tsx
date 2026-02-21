@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Play, StopCircle, ChevronLeft, Activity, Repeat2, Zap } from "lucide-react";
+import { Play, StopCircle, ChevronLeft, Activity, Repeat2, Zap, CheckCircle2, AlertCircle } from "lucide-react";
 import { Pose, POSE_CONNECTIONS } from "@mediapipe/pose";
 import type { Results } from "@mediapipe/pose";
 import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
 import * as faceapi from "face-api.js";
-
-
 
 // ───────────────────────────────────────────────────────────────────────────────
 interface NormLandmark { x: number; y: number; z: number; visibility: number; }
@@ -152,10 +150,65 @@ interface Template {
   frames: number[][][];
 }
 
-// Emotions considered strain indicators
+// ── Posture analysis from raw landmarks ──────────────────────────────────────
+// Returns { status, cue } based on MediaPipe landmark positions.
+// Landmark indices: 11=L-shoulder, 12=R-shoulder, 23=L-hip, 24=R-hip,
+//                  25=L-knee, 26=R-knee, 27=L-ankle, 28=R-ankle
+function analysePosture(lms: any[]): { status: "correct" | "incorrect"; cue: string | null } {
+  if (!lms || lms.length < 29) return { status: "correct", cue: null };
+
+  const vis = (i: number) => (lms[i]?.visibility ?? 0) > 0.4;
+
+  // ── Shoulder alignment (are shoulders level?) ──
+  if (vis(11) && vis(12)) {
+    const shoulderTilt = Math.abs(lms[11].y - lms[12].y);
+    if (shoulderTilt > 0.06) {
+      return { status: "incorrect", cue: "Level your shoulders" };
+    }
+  }
+
+  // ── Spine alignment: shoulder midpoint vs hip midpoint ──
+  if (vis(11) && vis(12) && vis(23) && vis(24)) {
+    const shoulderMidX = (lms[11].x + lms[12].x) / 2;
+    const hipMidX      = (lms[23].x + lms[24].x) / 2;
+    const lateralLean  = Math.abs(shoulderMidX - hipMidX);
+    if (lateralLean > 0.08) {
+      return { status: "incorrect", cue: "Keep your back straight" };
+    }
+  }
+
+  // ── Hip drop (one hip significantly lower) ──
+  if (vis(23) && vis(24)) {
+    const hipTilt = Math.abs(lms[23].y - lms[24].y);
+    if (hipTilt > 0.06) {
+      return { status: "incorrect", cue: "Keep your hips level" };
+    }
+  }
+
+  // ── Knee cave (knees closer together than ankles — for squat-type moves) ──
+  if (vis(25) && vis(26) && vis(27) && vis(28)) {
+    const kneeWidth  = Math.abs(lms[25].x - lms[26].x);
+    const ankleWidth = Math.abs(lms[27].x - lms[28].x);
+    if (kneeWidth < ankleWidth * 0.6) {
+      return { status: "incorrect", cue: "Push knees outward" };
+    }
+  }
+
+  // ── Forward head / neck tilt: nose vs shoulder midpoint ──
+  if (vis(0) && vis(11) && vis(12)) {
+    const noseX       = lms[0].x;
+    const shoulderMidX = (lms[11].x + lms[12].x) / 2;
+    if (Math.abs(noseX - shoulderMidX) > 0.1) {
+      return { status: "incorrect", cue: "Tuck your chin in" };
+    }
+  }
+
+  return { status: "correct", cue: null };
+}
+
+// ── Emotion constants ────────────────────────────────────────────────────────
 const STRAIN_EMOTIONS = ["angry", "sad", "fearful", "disgusted"];
 
-// Emoji map for display
 const EMOTION_EMOJI: Record<string, string> = {
   happy:     "😊",
   neutral:   "😐",
@@ -166,6 +219,7 @@ const EMOTION_EMOJI: Record<string, string> = {
   disgusted: "🤢",
 };
 
+// ── Component ────────────────────────────────────────────────────────────────
 const PatientCustomExercise: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -185,7 +239,11 @@ const PatientCustomExercise: React.FC = () => {
     status: "Press Start to begin",
   });
 
-  // ── Emotion display state ─────────────────────────────────────────────────
+  // ── Posture state (mirrors ExerciseSession) ───────────────────────────────
+  const [postureStatus, setPostureStatus] = useState<"correct" | "incorrect">("correct");
+  const [formCue, setFormCue] = useState<string | null>(null);
+
+  // ── Emotion state ─────────────────────────────────────────────────────────
   const [strainEmotion, setStrainEmotion] = useState<string | null>(null);
 
   const videoRef  = useRef<HTMLVideoElement>(null);
@@ -206,7 +264,6 @@ const PatientCustomExercise: React.FC = () => {
   const isActiveRef         = useRef(false);
   const matchSimilarityRef  = useRef(0);
 
-  // Keep refs in sync with state so async loops read current values
   useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
 
   // ── Load assignment + template ────────────────────────────────────────────
@@ -276,14 +333,12 @@ const PatientCustomExercise: React.FC = () => {
   // ── Audio warning ─────────────────────────────────────────────────────────
   const triggerAudioWarning = useCallback(() => {
     const now = Date.now();
-    if (now - lastAudioTimeRef.current < 8000) return; // 8 s cooldown
+    if (now - lastAudioTimeRef.current < 8000) return;
     lastAudioTimeRef.current = now;
     const msg = new SpeechSynthesisUtterance(
       "Please do not pressure yourself. Take it slow."
     );
-    msg.rate   = 0.9;
-    msg.pitch  = 1;
-    msg.volume = 1;
+    msg.rate = 0.9; msg.pitch = 1; msg.volume = 1;
     window.speechSynthesis.speak(msg);
   }, []);
 
@@ -303,6 +358,7 @@ const PatientCustomExercise: React.FC = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       if (results.poseLandmarks) {
+        // ── DTW match ──
         const norm = PoseNormalizer.normalize(results.poseLandmarks as any);
         if (norm && matcherRef.current) {
           const res = matcherRef.current.processFrame(norm);
@@ -316,6 +372,11 @@ const PatientCustomExercise: React.FC = () => {
           drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: "#00e5cc", lineWidth: 2 });
           drawLandmarks(ctx, results.poseLandmarks, { color: "#ffffff", lineWidth: 1, radius: 3 });
         }
+
+        // ── Posture analysis ──
+        const posture = analysePosture(results.poseLandmarks as any);
+        setPostureStatus(posture.status);
+        setFormCue(posture.cue);
       }
       ctx.restore();
     });
@@ -336,7 +397,7 @@ const PatientCustomExercise: React.FC = () => {
         if (videoRef.current && videoRef.current.readyState >= 2) {
           await pose.send({ image: videoRef.current });
 
-          // ───────── Emotion Detection (Every 10 Frames) ─────────
+          // ── Emotion detection every 10 frames ──
           frameCounterRef.current++;
           if (
             emotionModelLoaded.current &&
@@ -345,22 +406,16 @@ const PatientCustomExercise: React.FC = () => {
           ) {
             try {
               const detection = await faceapi
-                .detectSingleFace(
-                  videoRef.current,
-                  new faceapi.TinyFaceDetectorOptions()
-                )
+                .detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions())
                 .withFaceExpressions();
 
               if (detection?.expressions) {
-                // Pick dominant emotion for display
                 const dominantEmotion = Object.entries(detection.expressions as any)
                   .sort((a: any, b: any) => b[1] - a[1])[0][0];
                 setStrainEmotion(dominantEmotion);
 
-                // Strain score: angry + sad + fearful combined confidence
                 const { angry, sad, fearful } = detection.expressions as any;
                 const strainScore = (angry ?? 0) + (sad ?? 0) + (fearful ?? 0);
-
                 if (strainScore > 0.8 && matchSimilarityRef.current < 50) {
                   triggerAudioWarning();
                 }
@@ -407,6 +462,8 @@ const PatientCustomExercise: React.FC = () => {
       frameCounterRef.current = 0;
       lastAudioTimeRef.current = 0;
       setStrainEmotion(null);
+      setPostureStatus("correct");
+      setFormCue(null);
       setMatchResult({ similarity: 0, repCount: 0, status: "Perform the exercise" });
       initPose();
     } catch (e: any) {
@@ -420,6 +477,8 @@ const PatientCustomExercise: React.FC = () => {
     stopCamera();
     setIsActive(false);
     setStrainEmotion(null);
+    setPostureStatus("correct");
+    setFormCue(null);
     window.speechSynthesis.cancel();
 
     try {
@@ -440,10 +499,8 @@ const PatientCustomExercise: React.FC = () => {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
-
   const simColour = (s: number) =>
     s >= 75 ? "text-emerald-400" : s >= 45 ? "text-yellow-400" : "text-slate-400";
-
   const isStrainEmotion = strainEmotion ? STRAIN_EMOTIONS.includes(strainEmotion) : false;
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -459,10 +516,7 @@ const PatientCustomExercise: React.FC = () => {
     return (
       <div className="h-screen bg-slate-900 flex flex-col items-center justify-center gap-4 text-white px-6 text-center">
         <p className="text-red-400 text-lg font-medium">{error}</p>
-        <button
-          onClick={() => navigate("/patient")}
-          className="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 rounded-xl font-semibold transition"
-        >
+        <button onClick={() => navigate("/patient")} className="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 rounded-xl font-semibold transition">
           Back to Dashboard
         </button>
       </div>
@@ -481,9 +535,7 @@ const PatientCustomExercise: React.FC = () => {
         <video
           ref={videoRef}
           className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
-          playsInline
-          muted
-          autoPlay
+          playsInline muted autoPlay
         />
         <canvas
           ref={canvasRef}
@@ -498,7 +550,32 @@ const PatientCustomExercise: React.FC = () => {
           <ChevronLeft size={16} /> Dashboard
         </button>
 
-        {/* ── Emotion badge — top-right of camera feed ── */}
+        {/* ── Posture / form cue overlay — top centre (same as ExerciseSession) ── */}
+        {isActive && (
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20">
+            <div className={`flex items-center gap-3 px-6 py-3 rounded-full backdrop-blur-md border shadow-2xl transition-all duration-300 ${
+              postureStatus === "correct"
+                ? "bg-teal-500/20 border-teal-400/50 text-teal-300"
+                : "bg-red-500/20 border-red-400/50 text-red-300"
+            }`}>
+              {postureStatus === "correct" ? (
+                <>
+                  <CheckCircle2 size={22} fill="currentColor" />
+                  <span className="font-bold tracking-wide">Posture Correct</span>
+                </>
+              ) : (
+                <>
+                  <AlertCircle size={22} fill="currentColor" />
+                  <span className="font-bold tracking-wide uppercase">
+                    {formCue ?? "Check your form"}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Emotion badge — top-right ── */}
         {isActive && strainEmotion && (
           <div className={`absolute top-4 right-4 z-20 flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold backdrop-blur-sm border transition-all ${
             isStrainEmotion
@@ -513,7 +590,7 @@ const PatientCustomExercise: React.FC = () => {
           </div>
         )}
 
-        {/* Similarity overlay — bottom centre of camera */}
+        {/* ── Similarity overlay — bottom centre ── */}
         {isActive && (
           <div className="absolute inset-0 z-20 flex items-end justify-center pb-8 pointer-events-none">
             <div className="bg-slate-900/80 backdrop-blur-sm rounded-2xl px-6 py-3 flex items-center gap-4">
@@ -594,7 +671,28 @@ const PatientCustomExercise: React.FC = () => {
           </div>
         </div>
 
-        {/* ── Expression card (side panel) ── */}
+        {/* ── Posture cue card (sidebar) ── */}
+        {isActive && (
+          <div className={`rounded-xl px-4 py-3 flex items-center gap-3 border transition-all ${
+            postureStatus === "correct"
+              ? "bg-teal-500/10 border-teal-500/30"
+              : "bg-red-500/10 border-red-500/30"
+          }`}>
+            {postureStatus === "correct" ? (
+              <CheckCircle2 size={20} className="text-teal-400 shrink-0" />
+            ) : (
+              <AlertCircle size={20} className="text-red-400 shrink-0" />
+            )}
+            <div>
+              <p className="text-xs uppercase tracking-wide font-bold mb-0.5 text-slate-400">Form</p>
+              <p className={`text-sm font-semibold ${postureStatus === "correct" ? "text-teal-300" : "text-red-300"}`}>
+                {postureStatus === "correct" ? "Posture Correct" : (formCue ?? "Check your form")}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Expression card (sidebar) ── */}
         {isActive && strainEmotion && (
           <div className={`rounded-xl px-4 py-3 flex items-center justify-between border transition-all ${
             isStrainEmotion
@@ -602,12 +700,8 @@ const PatientCustomExercise: React.FC = () => {
               : "bg-slate-800 border-slate-700"
           }`}>
             <div>
-              <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-0.5">
-                Expression
-              </p>
-              <p className={`font-semibold capitalize text-sm ${
-                isStrainEmotion ? "text-red-300" : "text-emerald-300"
-              }`}>
+              <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-0.5">Expression</p>
+              <p className={`font-semibold capitalize text-sm ${isStrainEmotion ? "text-red-300" : "text-emerald-300"}`}>
                 {strainEmotion}
               </p>
               {isStrainEmotion && (
