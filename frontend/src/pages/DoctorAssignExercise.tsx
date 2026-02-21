@@ -86,7 +86,18 @@ const AssignExercise = () => {
     if (!selectedExercises.find((e) => e._id === exercise._id && !e.isCustom)) {
       setSelectedExercises([
         ...selectedExercises,
-        { ...exercise, sets: 3, reps: exercise.reps || 10, tolerance: 0, isCustom: false },
+        {
+          ...exercise,
+          sets: 3,
+          reps: exercise.reps || 10,
+          tolerances: [
+            { joint: "Knee", tolerance: 15 },
+            { joint: "Hip", tolerance: 15 },
+            { joint: "Shoulder", tolerance: 15 },
+            { joint: "Elbow", tolerance: 15 }
+          ],
+          isCustom: false
+        },
       ]);
     }
   };
@@ -95,7 +106,20 @@ const AssignExercise = () => {
     if (!selectedExercises.find((e) => e._id === tmpl.id && e.isCustom)) {
       setSelectedExercises([
         ...selectedExercises,
-        { _id: tmpl.id, name: tmpl.name, description: tmpl.description, sets: 3, reps: 10, tolerance: 0, isCustom: true },
+        {
+          _id: tmpl.id,
+          name: tmpl.name,
+          description: tmpl.description,
+          sets: 3,
+          reps: 10,
+          tolerances: [
+            { joint: "Knee", tolerance: 15 },
+            { joint: "Hip", tolerance: 15 },
+            { joint: "Shoulder", tolerance: 15 },
+            { joint: "Elbow", tolerance: 15 }
+          ],
+          isCustom: true
+        },
       ]);
     }
   };
@@ -108,6 +132,21 @@ const AssignExercise = () => {
     setSelectedExercises(
       selectedExercises.map((e) =>
         e._id === id ? { ...e, [field]: Number(value) } : e
+      )
+    );
+  };
+
+  const updateTolerance = (id, joint, value) => {
+    setSelectedExercises(
+      selectedExercises.map((e) =>
+        e._id === id
+          ? {
+            ...e,
+            tolerances: e.tolerances.map((t) =>
+              t.joint === joint ? { ...t, tolerance: Number(value) } : t
+            ),
+          }
+          : e
       )
     );
   };
@@ -133,6 +172,7 @@ const AssignExercise = () => {
               customTemplateId: ex._id,
               sets: ex.sets,
               repsPerSet: ex.reps,
+              tolerances: ex.tolerances,
               date: startDate,
               endDate: endDate,
             }),
@@ -144,7 +184,7 @@ const AssignExercise = () => {
             body: JSON.stringify({
               patientId,
               exerciseId: ex._id,
-              prescription: { sets: ex.sets, repsPerSet: ex.reps, tolerance: ex.tolerance },
+              prescription: { sets: ex.sets, repsPerSet: ex.reps, tolerances: ex.tolerances },
               date: startDate,
               endDate: endDate,
             }),
@@ -192,12 +232,12 @@ const AssignExercise = () => {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
+
           {/* LEFT: Exercise Library */}
           <div className="lg:col-span-8 space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                Exercise Library 
+                Exercise Library
                 <span className="text-xs font-normal bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
                   {exerciseLibrary.length}
                 </span>
@@ -285,7 +325,7 @@ const AssignExercise = () => {
           {/* RIGHT: Plan Builder */}
           <div className="lg:col-span-4">
             <div className="sticky top-28 space-y-6">
-              
+
               {/* DATE SELECTOR */}
               <div className="bg-white rounded-2xl p-5 border shadow-sm">
                 <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
@@ -368,31 +408,31 @@ const AssignExercise = () => {
                           </div>
                         </div>
 
-                        {/* TOLERANCE SLIDER */}
-                        <div className="mt-3">
-                          <div className="flex justify-between items-center mb-1">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Angle Tolerance</label>
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                              ex.tolerance === 0
-                                ? "bg-slate-100 text-slate-500"
-                                : ex.tolerance <= 10
-                                ? "bg-yellow-50 text-yellow-600"
-                                : "bg-orange-50 text-orange-600"
-                            }`}>{ex.tolerance}°</span>
-                          </div>
-                          <input
-                            type="range"
-                            min={0}
-                            max={30}
-                            step={5}
-                            value={ex.tolerance}
-                            onChange={(e) => updateField(ex._id, "tolerance", e.target.value)}
-                            className="w-full h-1.5 rounded-full appearance-none bg-slate-200 accent-teal-500 cursor-pointer"
-                          />
-                          <div className="flex justify-between text-[9px] text-slate-400 mt-0.5">
-                            <span>Strict</span>
-                            <span>Lenient</span>
-                          </div>
+                        {/* TOLERANCE SLIDERS */}
+                        <div className="mt-4 space-y-4">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight block border-b pb-1 mb-2">Joint Tolerances</label>
+                          {ex.tolerances?.map(t => (
+                            <div key={t.joint}>
+                              <div className="flex justify-between items-center mb-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase">{t.joint}</span>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${t.tolerance === 0
+                                    ? "bg-slate-100 text-slate-500"
+                                    : t.tolerance <= 15
+                                      ? "bg-yellow-50 text-yellow-600"
+                                      : "bg-orange-50 text-orange-600"
+                                  }`}>{t.tolerance}°</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={0}
+                                max={45}
+                                step={5}
+                                value={t.tolerance}
+                                onChange={(e) => updateTolerance(ex._id, t.joint, e.target.value)}
+                                className="w-full h-1.5 rounded-full appearance-none bg-slate-200 accent-teal-500 cursor-pointer"
+                              />
+                            </div>
+                          ))}
                         </div>
                       </div>
                     ))

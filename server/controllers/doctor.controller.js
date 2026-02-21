@@ -11,7 +11,7 @@ export const assignExercise = async (req, res) => {
   }
 
   try {
-    const { sets, repsPerSet, tolerance } = prescription;
+    const { sets, repsPerSet, tolerances = [] } = prescription;
 
     if (
       !Number.isInteger(sets) ||
@@ -24,10 +24,20 @@ export const assignExercise = async (req, res) => {
       });
     }
 
-    // tolerance is optional — clamp to 0..30
-    const tol = typeof tolerance === 'number' ? tolerance : Number(tolerance);
-    if (Number.isNaN(tol) || tol < 0 || tol > 30) {
-      return res.status(400).json({ message: "invalid tolerance; must be a number between 0 and 30" });
+    if (!Array.isArray(tolerances)) {
+      return res.status(400).json({
+        message: "invalid tolerances! must be an array of JointTolerance objects",
+      });
+    }
+
+    // validating the tolerances array roughly
+    const isValidTolerances = tolerances.every(
+      (t) => t.joint && typeof t.tolerance === "number" && t.tolerance >= 0 && t.tolerance <= 90
+    );
+    if (!isValidTolerances) {
+      return res.status(400).json({
+        message: "invalid tolerances! each object must have a joint string and a valid tolerance number",
+      });
     }
 
     const patient = await findUserById(patientId);
@@ -46,7 +56,7 @@ export const assignExercise = async (req, res) => {
       exerciseId,
       date: new Date(date),
       endDate: endDate ? new Date(endDate) : undefined,
-      prescription: JSON.stringify({ sets, repsPerSet, tolerance: tol ?? 0 }),
+      prescription: JSON.stringify({ sets, repsPerSet, tolerances }),
     });
 
     res.status(201).json({

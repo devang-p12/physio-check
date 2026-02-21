@@ -18,7 +18,6 @@ const ExerciseSession = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const assignmentId = searchParams.get('id');
-  const tolerance = Number(searchParams.get('tolerance') ?? 0);
 
   const [isActive, setIsActive] = useState(false);
   const [sessionId, setSessionId] = useState(null);
@@ -93,10 +92,10 @@ const ExerciseSession = () => {
         const data = await response.json();
         const enabled = data.settings.smartwatchEnabled;
         const connected = data.googleFit.connected;
-        
+
         setSmartwatchEnabled(enabled);
         setPredictedMode(enabled && connected ? 'tracked' : 'manual');
-        
+
         console.log('Settings check:', {
           smartwatchEnabled: enabled,
           googleFitConnected: connected,
@@ -144,7 +143,8 @@ const ExerciseSession = () => {
     videoRef,
     canvasRef,
     isActive: isActive && !isReaction,
-    tolerance,
+    tolerances: assignment?.prescription ? (typeof assignment.prescription === 'string' ? JSON.parse(assignment.prescription).tolerances : assignment.prescription.tolerances) : [],
+    exerciseName: assignment?.exercise?.name,
     onRepUpdate: setReps,
     onPostureUpdate: setPostureStatus,
     onCueUpdate: setFormCue,
@@ -176,15 +176,15 @@ const ExerciseSession = () => {
         // Use server's recorded startTime so the Google Fit query window
         // matches exactly what the server stored (avoids client/server clock drift)
         setSessionStartTime(new Date(data.session.startTime));
-        
+
         console.log('Session started:', data);
         console.log('Session mode set to:', data.session.mode);
         console.log('Current state - smartwatchEnabled:', smartwatchEnabled, 'sessionMode:', data.session.mode);
-        
+
         if (data.warnings && data.warnings.length > 0) {
           console.warn('Session warnings:', data.warnings);
         }
-        
+
         if (smartwatchEnabled && wsConnected) {
           wsService.startSession(data.session.id);
         }
@@ -222,11 +222,11 @@ const ExerciseSession = () => {
       if (response.ok) {
         const data = await response.json();
         setIsActive(false);
-        
+
         if (smartwatchEnabled && wsConnected) {
           wsService.endSession(sessionId);
         }
-        
+
         // Fetch historical data if smartwatch was enabled
         if (smartwatchEnabled && sessionStartTime && sessionMode === 'tracked') {
           setTimeout(async () => {
@@ -235,7 +235,7 @@ const ExerciseSession = () => {
               // Google Fit data synced slightly before/after is captured
               const bufferMs = 5 * 60 * 1000;
               const queryStart = new Date(sessionStartTime.getTime() - bufferMs);
-              const queryEnd   = new Date(endTime.getTime()   + bufferMs);
+              const queryEnd = new Date(endTime.getTime() + bufferMs);
               const historyResponse = await fetch(
                 `http://localhost:5000/google-fit/history?startTime=${queryStart.toISOString()}&endTime=${queryEnd.toISOString()}`,
                 {
@@ -261,7 +261,7 @@ const ExerciseSession = () => {
               console.error('Error fetching historical data:', error);
               alert(`Session completed!\n\nReps: ${reps}\nDuration: ${formatTime(timer)}`);
             }
-            
+
             navigate('/patient');
           }, 2000); // Wait 2 seconds for Google Fit to sync
         } else {
@@ -287,47 +287,46 @@ const ExerciseSession = () => {
         <div className="absolute inset-0 bg-gradient-to-b from-slate-900/50 to-slate-900/10 z-10" />
 
         {/* CAMERA */}
-          {!isReaction ? (
-            <>
-              <video
-                ref={videoRef}
-                className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
-                playsInline
-                muted
-                autoPlay
-              />
+        {!isReaction ? (
+          <>
+            <video
+              ref={videoRef}
+              className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
+              playsInline
+              muted
+              autoPlay
+            />
 
-              {/* SKELETON CANVAS */}
-              <canvas
-                ref={canvasRef}
-                className="absolute inset-0 w-full h-full object-cover scale-x-[-1] z-10 pointer-events-none"
-              />
-            </>
-          ) : (
-            <div className="p-6">
-              <ReactionExercise
-                duration={assignment?.exercise?.duration ?? 30}
-                targets={assignment?.prescription?.repsPerSet ?? 10}
-                isActive={isActive}
-                onHitsChange={setReactionHits}
-                onTimeChange={setReactionTimeLeft}
-                onComplete={(score) => {
-                  console.log('Reaction exercise complete', score);
-                  setReactionHits(score.hits);
-                }}
-              />
-            </div>
-          )}
+            {/* SKELETON CANVAS */}
+            <canvas
+              ref={canvasRef}
+              className="absolute inset-0 w-full h-full object-cover scale-x-[-1] z-10 pointer-events-none"
+            />
+          </>
+        ) : (
+          <div className="p-6">
+            <ReactionExercise
+              duration={assignment?.exercise?.duration ?? 30}
+              targets={assignment?.prescription?.repsPerSet ?? 10}
+              isActive={isActive}
+              onHitsChange={setReactionHits}
+              onTimeChange={setReactionTimeLeft}
+              onComplete={(score) => {
+                console.log('Reaction exercise complete', score);
+                setReactionHits(score.hits);
+              }}
+            />
+          </div>
+        )}
 
         {/* Live Feedback Overlay - only for non-reaction exercises */}
         {!isReaction && (
           <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20">
             <div
-              className={`flex items-center gap-3 px-6 py-3 rounded-full backdrop-blur-md border shadow-2xl transition-all duration-300 ${
-                postureStatus === "correct"
-                  ? "bg-teal-500/20 border-teal-400/50 text-teal-300"
-                  : "bg-red-500/20 border-red-400/50 text-red-300"
-              }`}
+              className={`flex items-center gap-3 px-6 py-3 rounded-full backdrop-blur-md border shadow-2xl transition-all duration-300 ${postureStatus === "correct"
+                ? "bg-teal-500/20 border-teal-400/50 text-teal-300"
+                : "bg-red-500/20 border-red-400/50 text-red-300"
+                }`}
             >
               {postureStatus === "correct" ? (
                 <>
@@ -414,7 +413,7 @@ const ExerciseSession = () => {
                 </span>
                 Instructions
               </h3>
-              
+
               {/* Google Fit Status Badge */}
               {isActive ? (
                 // Show actual session mode when session is active
@@ -510,7 +509,7 @@ const ExerciseSession = () => {
               >
                 <RefreshCcw size={20} />
               </button>
-              <button 
+              <button
                 onClick={handleEndSession}
                 className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 rounded-xl shadow-lg"
               >
