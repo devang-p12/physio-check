@@ -18,7 +18,7 @@ import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
 // TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Stage = "idle" | "configuring" | "capturing" | "processing" | "done" | "error";
+type Stage = "idle" | "configuring" | "capturing" | "reference_recording" | "processing" | "done" | "error";
 type TestStage = "idle" | "running" | "done";
 type ExerciseMode = "workout" | "stretch";
 type ExerciseType = "body" | "palm";
@@ -48,6 +48,8 @@ interface ExerciseTemplate {
   /** frames[i][j] = [x, y, z, visibility] */
   frames: number[][][];
   stretchConfig?: StretchConfig;
+  videoUrl?: string;
+  keyframeTimestamps?: number[];
 }
 
 interface LiveMatchResult { similarity: number; repCount: number; status: string; }
@@ -790,6 +792,12 @@ const CreateExercise = () => {
   // Stretch only needs 1 keyframe (starting position)
   const effectiveNumKeyframes = exerciseMode === "stretch" ? 1 : numKeyframes;
 
+  const [keyframeTimestamps, setKeyframeTimestamps] = useState<number[]>([]);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const videoChunksRef = useRef<Blob[]>([]);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const recordingStartTimeRef = useRef<number>(0);
+
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState("");
   const [template, setTemplate] = useState<ExerciseTemplate | null>(null);
@@ -799,6 +807,8 @@ const CreateExercise = () => {
   const [loadTemplateError, setLoadTemplateError] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState("");
+  const [similarity, setSimilarity] = useState(0);
+  const [status, setStatus] = useState("Press Start to begin");
 
   const testFileInputRef = useRef<HTMLInputElement>(null);
   const liveVideoRef = useRef<HTMLVideoElement>(null);
@@ -811,6 +821,9 @@ const CreateExercise = () => {
   const captureInProgressRef = useRef(false);
   const sendLoopRef = useRef<(() => void) | null>(null);  // ref to sendLoop fn so onResults can restart it
   const [recordingDetected, setRecordingDetected] = useState(false);
+  const liveMatcherRef = useRef<LiveMatcher | null>(null);
+  const refRecordingTimestampsRef = useRef<number[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
 
   const startCapturingFlow = async () => {
     if (!exerciseName.trim()) {
@@ -820,8 +833,10 @@ const CreateExercise = () => {
     }
     setStage("capturing");
     setKeyframes([]);
+    setKeyframeTimestamps([]);
     setCurrentCaptureIdx(0);
     setCountdown(null);
+    setVideoUrl(null);
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
@@ -853,14 +868,31 @@ const CreateExercise = () => {
                 }
                 setRecordingDetected(true);
                 // If we are ONLY doing hands OR we just captured, we can save a hand frame
-                if (captureInProgressRef.current && (!runPose || isPalmExercise)) {
-                  const normLms = HandNormalizer.normalize(r.multiHandLandmarks[0]);
-                  if (normLms) {
+                if (captureInProgressRef.current && (runHands || isPalmExercise)) {
+                  const norm = HandNormalizer.normalize(r.multiHandLandmarks[0]);
+                  if (norm) {
                     captureInProgressRef.current = false;
-                    setKeyframes(prev => [...prev, normLms]);
+                    setKeyframes(prev => [...prev, norm]);
                     setCurrentCaptureIdx(prev => prev + 1);
                     if (sendLoopRef.current && !recCancelRef.current) {
                       recAnimRef.current = requestAnimationFrame(sendLoopRef.current);
+                    }
+                  }
+                }
+
+                // Reference Recording Sync
+                if (stage === "reference_recording" && liveMatcherRef.current && (runHands || isPalmExercise)) {
+                  const norm = HandNormalizer.normalize(r.multiHandLandmarks[0]);
+                  if (norm) {
+                    const res = liveMatcherRef.current.processFrame(norm);
+                    setSimilarity(res.similarity);
+                    setStatus(res.status);
+
+                    const nextIdx = liveMatcherRef.current.currentTargetIndex;
+                    if (nextIdx > refRecordingTimestampsRef.current.length) {
+                      const ts = (Date.now() - recordingStartTimeRef.current) / 1000;
+                      refRecordingTimestampsRef.current.push(ts);
+                      console.log(`[CreateExercise] Auto-logged timestamp for keyframe ${nextIdx}: ${ts}s`);
                     }
                   }
                 }
@@ -902,6 +934,23 @@ const CreateExercise = () => {
                     setCurrentCaptureIdx(prev => prev + 1);
                     if (sendLoopRef.current && !recCancelRef.current) {
                       recAnimRef.current = requestAnimationFrame(sendLoopRef.current);
+                    }
+                  }
+                }
+
+                // Reference Recording Sync
+                if (stage === "reference_recording" && liveMatcherRef.current && (!runHands || !isPalmExercise)) {
+                  const norm = PoseNormalizer.normalize(r.poseLandmarks);
+                  if (norm) {
+                    const res = liveMatcherRef.current.processFrame(norm);
+                    setSimilarity(res.similarity);
+                    setStatus(res.status);
+
+                    const nextIdx = liveMatcherRef.current.currentTargetIndex;
+                    if (nextIdx > refRecordingTimestampsRef.current.length) {
+                      const ts = (Date.now() - recordingStartTimeRef.current) / 1000;
+                      refRecordingTimestampsRef.current.push(ts);
+                      console.log(`[CreateExercise] Auto-logged timestamp for keyframe ${nextIdx}: ${ts}s`);
                     }
                   }
                 }
@@ -949,6 +998,7 @@ const CreateExercise = () => {
   const stopRecordingSkeleton = () => {
     recCancelRef.current = true;
     if (recAnimRef.current) { cancelAnimationFrame(recAnimRef.current); recAnimRef.current = null; }
+    // video recording is stopped in Phase 2
     recPoseRef.current?.close(); recPoseRef.current = null;
     setRecordingDetected(false);
     if (liveCanvasRef.current) {
@@ -976,6 +1026,10 @@ const CreateExercise = () => {
         canvas.width = liveVideoRef.current!.videoWidth || 640;
         canvas.height = liveVideoRef.current!.videoHeight || 480;
         canvas.getContext('2d')!.drawImage(liveVideoRef.current!, 0, 0);
+
+        // Capture the timestamp relative to the video recording
+        const ts = (Date.now() - recordingStartTimeRef.current) / 1000;
+        setKeyframeTimestamps(prev => [...prev, ts]);
 
         // Pause the sendLoop and request ONE capture frame
         captureInProgressRef.current = true;
@@ -1005,11 +1059,70 @@ const CreateExercise = () => {
     setStage("idle");
   };
 
+  const startReferenceRecording = () => {
+    if (keyframes.length === 0) return;
+    setStage("reference_recording");
+    setKeyframeTimestamps([]);
+    refRecordingTimestampsRef.current = [];
+    liveMatcherRef.current = new LiveMatcher(keyframes);
+
+    // Start MediaRecorder
+    if (streamRef.current) {
+      const recorder = new MediaRecorder(streamRef.current, { mimeType: "video/webm;codecs=vp8" });
+      videoChunksRef.current = [];
+      recorder.ondataavailable = e => { if (e.data.size > 0) videoChunksRef.current.push(e.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(videoChunksRef.current, { type: "video/webm" });
+        const url = URL.createObjectURL(blob);
+        setVideoUrl(url);
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      recordingStartTimeRef.current = Date.now();
+      console.log("[CreateExercise] Started reference video recording");
+    }
+  };
+
+  const stopReferenceRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    setKeyframeTimestamps([...refRecordingTimestampsRef.current]);
+    stopRecordingSkeleton();
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+    if (liveVideoRef.current) liveVideoRef.current.srcObject = null;
+    setStage("processing");
+  };
+
   const saveToLibrary = async () => {
     if (!template) return;
     const token = localStorage.getItem("token");
     setSaveStatus("saving"); setSaveError("");
+    setIsUploading(true);
+
     try {
+      let finalVideoUrl = "";
+
+      // 1. Upload video if available
+      if (videoChunksRef.current.length > 0) {
+        setSaveStatus("saving"); // maybe a separate status for uploading?
+        const videoBlob = new Blob(videoChunksRef.current, { type: "video/webm" });
+        const formData = new FormData();
+        formData.append("video", videoBlob, "reference.webm");
+
+        const uploadRes = await fetch("http://localhost:5000/doctor/upload-video", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${token}` },
+          body: formData,
+        });
+
+        if (!uploadRes.ok) throw new Error("Video upload failed");
+        const uploadData = await uploadRes.json();
+        finalVideoUrl = uploadData.videoUrl;
+      }
+
+      // 2. Save Template
       const res = await fetch("http://localhost:5000/doctor/custom-templates", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
@@ -1023,6 +1136,8 @@ const CreateExercise = () => {
           durationSeconds: template.durationSeconds,
           frames: template.frames,
           stretchConfig: template.stretchConfig,
+          videoUrl: finalVideoUrl,
+          keyframeTimestamps: template.keyframeTimestamps,
         }),
       });
       if (!res.ok) {
@@ -1033,6 +1148,8 @@ const CreateExercise = () => {
     } catch (e: any) {
       setSaveError(e.message ?? "Unknown error");
       setSaveStatus("error");
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -1042,14 +1159,11 @@ const CreateExercise = () => {
     catch (e: any) { setLoadTemplateError(e.message); }
   };
 
-  // When all keyframes are captured during "capturing" stage, stop the camera and move to processing
+  // When all keyframes are captured during "capturing" stage, move to reference recording wait
   useEffect(() => {
     if (stage === "capturing" && effectiveNumKeyframes > 0 && keyframes.length >= effectiveNumKeyframes) {
-      stopRecordingSkeleton();
-      streamRef.current?.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-      if (liveVideoRef.current) liveVideoRef.current.srcObject = null;
-      setStage("processing");
+      // Don't stop camera, let doctor prepare for clean rep
+      setStage("reference_recording");
     }
   }, [keyframes.length, effectiveNumKeyframes, stage]);
 
@@ -1082,6 +1196,7 @@ const CreateExercise = () => {
         durationSeconds: 0,
         frames,
         stretchConfig: exerciseMode === "stretch" ? stretchConfig : undefined,
+        keyframeTimestamps,
       });
       setStage("done");
     }
@@ -1142,21 +1257,24 @@ const CreateExercise = () => {
           </div>
         )}
 
-        <video ref={liveVideoRef} className="absolute inset-0 w-full h-full object-cover" style={{ display: stage === "capturing" ? "block" : "none", transform: "scaleX(-1)" }} autoPlay playsInline muted />
-        <canvas ref={liveCanvasRef} className="absolute inset-0 w-full h-full object-cover z-10 pointer-events-none" style={{ display: stage === "capturing" ? "block" : "none", transform: "scaleX(-1)" }} />
+        {/* Video & Canvas layer (used by capturing and recording) */}
+        {(stage === "capturing" || stage === "reference_recording") && (
+          <>
+            <video ref={liveVideoRef} className="absolute inset-0 w-full h-full object-cover" style={{ transform: "scaleX(-1)" }} autoPlay playsInline muted />
+            <canvas ref={liveCanvasRef} className="absolute inset-0 w-full h-full object-cover z-10 pointer-events-none" style={{ transform: "scaleX(-1)" }} />
+          </>
+        )}
 
         {stage === "capturing" && (
           <>
             <div className="absolute top-6 left-6 z-20 flex items-center gap-3">
               <div className="flex items-center gap-2 bg-red-500/90 text-white text-sm font-bold px-4 py-2 rounded-full backdrop-blur-sm shadow-lg">
-                <span className="w-2 h-2 bg-white rounded-full animate-pulse" /> Capturing: {currentCaptureIdx + 1} of {effectiveNumKeyframes}
+                <span className="w-2 h-2 bg-white rounded-full animate-pulse" /> Capturing Milestones: {currentCaptureIdx + 1} of {effectiveNumKeyframes}
               </div>
               <div className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-full backdrop-blur-sm transition-colors ${recordingDetected ? "bg-teal-500/90 text-white shadow-lg" : "bg-slate-800/80 text-slate-400"
                 }`}>
                 <span className={`w-2 h-2 rounded-full ${recordingDetected ? "bg-white" : "bg-slate-500"}`} />
-                {recordingDetected
-                  ? (isPalmExercise ? "Hand detected" : "Pose detected")
-                  : (isPalmExercise ? "Looking for hand…" : "Looking for body…")}
+                {recordingDetected ? (isPalmExercise ? "Hand detected" : "Pose detected") : "Looking for body…"}
               </div>
             </div>
 
@@ -1172,15 +1290,93 @@ const CreateExercise = () => {
             )}
 
             <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 flex items-center gap-4 w-full max-w-md px-6">
-              <button onClick={cancelCapture} disabled={countdown !== null} className="flex-1 bg-slate-800/80 hover:bg-slate-700 disabled:opacity-50 text-white font-bold px-6 py-4 rounded-2xl backdrop-blur-sm transition-all shadow-xl">
+              <button onClick={cancelCapture} disabled={countdown !== null} className="flex-1 bg-slate-800/80 hover:bg-slate-700 text-white font-bold px-6 py-4 rounded-2xl backdrop-blur-sm transition-all shadow-xl">
                 Cancel
               </button>
               <button
                 onClick={captureKeyframe}
                 disabled={!recordingDetected || countdown !== null}
                 className="flex-[2] flex items-center justify-center gap-3 bg-teal-500 hover:bg-teal-400 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold px-8 py-4 rounded-2xl transition-all shadow-xl shadow-teal-900/40">
-                <Video size={22} /> Capture Frame {currentCaptureIdx + 1}
+                <Video size={22} /> Capture Milestone {currentCaptureIdx + 1}
               </button>
+            </div>
+          </>
+        )}
+
+        {stage === "reference_recording" && (
+          <>
+            {/* Recording HUD */}
+            <div className="absolute top-6 left-6 z-20 flex flex-col gap-3">
+              <div className="flex items-center gap-2 bg-slate-900/80 backdrop-blur-md text-white text-xs font-bold px-4 py-2 rounded-full border border-slate-700 shadow-lg">
+                <span className="text-teal-400">Phase 2:</span> Clean Rep Recording
+              </div>
+
+              {mediaRecorderRef.current?.state === "recording" && (
+                <div className="flex items-center gap-2 bg-rose-600/90 text-white text-sm font-bold px-4 py-2 rounded-full backdrop-blur-sm shadow-xl animate-pulse">
+                  <div className="w-2.5 h-2.5 bg-white rounded-full" /> Recording Clean Rep...
+                </div>
+              )}
+
+              <div className="bg-slate-900/85 backdrop-blur-md rounded-2xl px-5 py-4 border border-slate-700/50 shadow-2xl min-w-[200px]">
+                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider mb-1">Auto-Sync Status</p>
+                <div className="flex items-end gap-2">
+                  <p className={`font-black text-4xl tabular-nums leading-none ${similarity >= 75 ? "text-emerald-400" : "text-white"}`}>{similarity}%</p>
+                  <p className="text-xs font-bold text-slate-500 mb-1">match</p>
+                </div>
+                <p className="text-xs font-semibold mt-2 text-teal-400">{status}</p>
+              </div>
+            </div>
+
+            {/* Milestones Checklist */}
+            <div className="absolute top-6 right-6 z-20 flex flex-col gap-2">
+              <div className="bg-slate-900/85 backdrop-blur-md rounded-xl p-4 border border-slate-700/50 shadow-xl max-w-[180px]">
+                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-3">MILESTONES</p>
+                <div className="space-y-2">
+                  {keyframes.map((_, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <div className={`w-4 h-4 rounded-full flex items-center justify-center border ${i < refRecordingTimestampsRef.current.length
+                          ? "bg-emerald-500 border-emerald-400 text-white"
+                          : "border-slate-600 bg-slate-800 text-slate-500"
+                        }`}>
+                        {i < refRecordingTimestampsRef.current.length ? <CheckCircle2 size={10} /> : <span className="text-[10px]">{i + 1}</span>}
+                      </div>
+                      <span className={`text-[11px] font-bold ${i < refRecordingTimestampsRef.current.length ? "text-emerald-400" : "text-slate-500"
+                        }`}>
+                        Milestone {i + 1}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Control Bar */}
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-6 w-full max-w-md px-6 text-center">
+              {!mediaRecorderRef.current || mediaRecorderRef.current.state === "inactive" ? (
+                <div className="bg-slate-900/90 backdrop-blur-xl border border-teal-500/30 p-6 rounded-3xl shadow-2xl space-y-4">
+                  <div>
+                    <h3 className="text-white font-black text-xl mb-1">Step 2: Clean Rep</h3>
+                    <p className="text-slate-400 text-xs leading-relaxed max-w-[300px] mx-auto">Perform a smooth, professional-looking demonstration. We'll auto-sync it with your milestones.</p>
+                  </div>
+                  <button
+                    onClick={startReferenceRecording}
+                    className="w-full flex items-center justify-center gap-3 bg-teal-500 hover:bg-teal-400 text-white font-black px-8 py-5 rounded-2xl transition-all active:scale-95 shadow-lg shadow-teal-500/20">
+                    <Play size={24} fill="currentColor" /> Start Recording
+                  </button>
+                  <button onClick={() => setStage("capturing")} className="text-slate-500 hover:text-white text-xs font-bold transition-colors">
+                    ← Back to Keyframe Capture
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="bg-rose-500/20 text-rose-300 text-[10px] font-black uppercase tracking-[0.2em] px-4 py-1.5 rounded-full border border-rose-500/30 backdrop-blur-md">Recording Phase</p>
+                  <button
+                    onClick={stopReferenceRecording}
+                    className="flex items-center justify-center gap-3 bg-white hover:bg-slate-100 text-slate-900 font-extrabold px-12 py-5 rounded-2xl transition-all active:scale-95 shadow-2xl ring-4 ring-rose-500/20">
+                    <Square size={24} fill="currentColor" className="text-rose-500" /> Stop Recording
+                  </button>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -1375,10 +1571,10 @@ const CreateExercise = () => {
           <div>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Progress</p>
             <div className="space-y-4">
-              <Step number={1} label="Add reference video" sublabel="Record or upload one clean repetition" done={stage !== "idle"} active={stage === "idle"} />
-              <Step number={2} label="Enter exercise name" sublabel="Required before processing" done={exerciseName.trim().length > 0} active={stage === "capturing" && !exerciseName.trim()} />
-              <Step number={3} label="Generate pose template" sublabel="AI extracts body movement data" done={stage === "done"} active={stage === "processing"} />
-              <Step number={4} label="Export JSON template" sublabel="Save and assign to patients" done={false} active={stage === "done"} />
+              <Step number={1} label="Milestone Capture" sublabel="Setup landmarks for matching" done={stage === "reference_recording" || stage === "processing" || stage === "done"} active={stage === "capturing"} />
+              <Step number={2} label="Clean Rep Recording" sublabel="Record 1 smooth demonstration" done={stage === "processing" || stage === "done"} active={stage === "reference_recording"} />
+              <Step number={3} label="AI Analysis" sublabel="Extracting movement data" done={stage === "done"} active={stage === "processing"} />
+              <Step number={4} label="Published Template" sublabel="Ready to assign to patients" done={false} active={stage === "done"} />
             </div>
           </div>
 
@@ -1403,7 +1599,10 @@ const CreateExercise = () => {
 
             {stage === "done" && template && (
               <div className="mb-3 bg-violet-50 border border-violet-100 rounded-2xl p-4">
-                <p className="text-xs text-violet-700 font-semibold mb-0.5">Your template is ready to test!</p>
+                <p className="text-xs text-violet-700 font-semibold mb-2">Reference video recorded!</p>
+                {videoUrl && (
+                  <video src={videoUrl} controls className="w-full aspect-video rounded-xl bg-black mb-3 border border-violet-200" />
+                )}
                 <p className="text-xs text-violet-500 mb-3">Keyframe matching + automatic rep counting</p>
                 <button onClick={() => setShowTemplateTester(true)}
                   className="w-full flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-500 text-white font-bold py-3 rounded-xl transition-all active:scale-95 text-sm">
@@ -1485,13 +1684,14 @@ const CreateExercise = () => {
           )}
 
           {!["processing", "done"].includes(stage) && (<>
-            {stage === "idle" && <p className="text-center text-xs text-slate-400">Add an exercise name and click Start to begin capturing keyframes.</p>}
+            {stage === "idle" && <p className="text-center text-xs text-slate-400">Add an exercise name and click Start to begin capturing milestones.</p>}
             {stage === "capturing" && <p className="text-center text-xs text-slate-400">Capture the sequence of {numKeyframes} keyframes to define the exercise.</p>}
+            {stage === "reference_recording" && <p className="text-center text-xs text-slate-400">Stand 2-3m back and perform one clean repetition.</p>}
             {stage === "error" && <button onClick={reset} className="w-full bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 font-semibold py-3 rounded-2xl transition-colors text-sm">Try Again</button>}
           </>)}
         </div>
       </div>
-    </div>
+    </div >
   );
 };
 

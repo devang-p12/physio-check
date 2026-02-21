@@ -92,7 +92,6 @@ class LiveMatcher {
   private isCooldown = false;
   private readonly cooldownMs = 1500;
   private readonly repThreshold = 60;  // lower = more tolerant
-  private _lastResult: LiveMatchResult | null = null;
   private buffer: NormFrame[] = [];
 
   constructor(frames: NormFrame[]) {
@@ -151,7 +150,6 @@ class LiveMatcher {
     }
 
     const result = { similarity: sim, repCount: this.repCount, status };
-    this._lastResult = result;
     return result;
   }
 
@@ -162,7 +160,7 @@ class LiveMatcher {
 
   reset() {
     this.repCount = 0; this.currentTargetIndex = 0; this.isCooldown = false;
-    this._lastResult = null; this.buffer = [];
+    this.buffer = [];
   }
 }
 
@@ -179,6 +177,8 @@ interface Template {
   durationSeconds: number;
   frames: number[][][];
   stretchConfig?: StretchConfig;
+  videoUrl?: string;
+  keyframeTimestamps?: number[];
 }
 
 const PatientCustomExercise: React.FC = () => {
@@ -210,10 +210,12 @@ const PatientCustomExercise: React.FC = () => {
   const poseRef = useRef<Pose | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const animRef = useRef<number | null>(null);
-  const stopRef = useRef(false);
   const matcherRef = useRef<LiveMatcher | null>(null);
   const templateFramesRef = useRef<any[][]>([]);
   const dingAudioRef = useRef(new Audio("/ding.mp3"));
+  const refVideoRef = useRef<HTMLVideoElement>(null);
+  const stopRef = useRef(false);
+  const [currentTargetIdx, setCurrentTargetIdx] = useState(0);
 
   // ── Load assignment + template ────────────────────────────────────────────
   useEffect(() => {
@@ -355,6 +357,7 @@ const PatientCustomExercise: React.FC = () => {
             if (norm && matcherRef.current && !isPhase2Ref.current) {
               const res = matcherRef.current.processFrame(norm);
               setSimilarity(res.similarity); setStatus(res.status);
+              setCurrentTargetIdx(matcherRef.current.currentTargetIndex);
               if (res.repCount > repCount) { setRepCount(res.repCount); dingAudio.currentTime = 0; dingAudio.play().catch(() => { }); }
             } else if (!norm && matcherRef.current && !isPhase2Ref.current) {
               setStatus(matcherRef.current.processFrame(null).status);
@@ -395,6 +398,7 @@ const PatientCustomExercise: React.FC = () => {
             const res = matcherRef.current.processFrame(norm);
             setSimilarity(res.similarity);
             setStatus(res.status);
+            setCurrentTargetIdx(matcherRef.current.currentTargetIndex);
 
             if (templateRef.current?.exerciseMode === "stretch" && res.repCount > 0 && !isPhase2Ref.current) {
               isPhase2Ref.current = true; setHoldSecs(0);
@@ -503,6 +507,9 @@ const PatientCustomExercise: React.FC = () => {
   const simColour = (s: number) =>
     s >= 75 ? "text-emerald-400" : s >= 45 ? "text-yellow-400" : "text-slate-400";
 
+  // ── Video sync removed to allow continuous playback ──────────────────────────
+  // The user requested a "normal video" experience.
+
   // ── Render ────────────────────────────────────────────────────────────────
   if (loadingData) {
     return (
@@ -572,9 +579,51 @@ const PatientCustomExercise: React.FC = () => {
       </div>
 
       {/* ── SIDE PANEL ────────────────────────────────────────────────────── */}
-      <div className="w-full md:w-80 bg-slate-900 border-l border-slate-800 flex flex-col p-6 gap-5 overflow-y-auto">
-        {/* Header */}
-        <div>
+      <div className="w-full md:w-[400px] bg-slate-800 border-l border-slate-700 flex flex-col overflow-y-auto">
+        {/* Reference Video */}
+        {template?.videoUrl ? (
+          <div className="p-4 border-b border-slate-700 bg-slate-900/50">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-bold text-teal-400 uppercase tracking-widest">Reference Performance</p>
+              <div className="flex items-center gap-1.5 px-2 py-0.5 bg-teal-500/20 text-teal-400 rounded-full text-[9px] font-black uppercase">
+                <span className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-pulse" /> Looping Demo
+              </div>
+            </div>
+            <div className="relative group">
+              <video
+                ref={refVideoRef}
+                src={template.videoUrl.startsWith('http') ? template.videoUrl : `http://localhost:5000${template.videoUrl}`}
+                className="w-full aspect-video rounded-xl bg-black shadow-2xl border border-slate-700"
+                muted
+                playsInline
+                autoPlay
+                loop
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3 pointer-events-none">
+                <p className="text-white text-[10px] font-bold uppercase tracking-wider">Example Repetition</p>
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
+                <p className="text-slate-500 text-[9px] font-bold uppercase mb-0.5">Target Pos</p>
+                <p className="text-white font-black text-sm">{currentTargetIdx + 1} / {template.frameCount}</p>
+              </div>
+              <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
+                <p className="text-slate-500 text-[9px] font-bold uppercase mb-0.5">Video Sync</p>
+                <p className="text-teal-400 font-black text-sm">{template.keyframeTimestamps?.[currentTargetIdx]?.toFixed(1)}s</p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="p-8 text-center space-y-3 border-b border-slate-700">
+            <div className="w-12 h-12 bg-slate-700 rounded-2xl flex items-center justify-center mx-auto mb-4 opacity-50">
+              <Activity size={24} className="text-slate-500" />
+            </div>
+            <p className="text-slate-400 text-sm font-medium">No reference video available for this exercise.</p>
+          </div>
+        )}
+
+        <div className="p-6 border-b border-slate-700">
           <div className="flex items-center gap-2 mb-1">
             <Activity size={18} className="text-teal-400" />
             <span className="text-xs font-bold uppercase tracking-widest text-teal-400">Custom Exercise</span>
