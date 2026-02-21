@@ -9,9 +9,9 @@ import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
 interface NormLandmark { x: number; y: number; z: number; visibility: number; }
 type NormFrame = NormLandmark[];
 
-const FULL_BODY_IDX  = [11,12,13,14,15,16,23,24,25,26,27,28];
-const UPPER_BODY_IDX = [11,12,13,14,15,16];
-const LOWER_CHECK    = [23,24,25,26];
+const FULL_BODY_IDX = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+const UPPER_BODY_IDX = [11, 12, 13, 14, 15, 16];
+const LOWER_CHECK = [23, 24, 25, 26];
 
 class PoseNormalizer {
   static isFullBody(lms: any[]): boolean {
@@ -22,7 +22,7 @@ class PoseNormalizer {
     const lS = lms[11], rS = lms[12];
     if ((lS.visibility ?? 1) < 0.3 || (rS.visibility ?? 1) < 0.3) return null;
     const cx = (lS.x + rS.x) / 2, cy = (lS.y + rS.y) / 2, cz = (lS.z + rS.z) / 2;
-    const sw = Math.sqrt((lS.x-rS.x)**2 + (lS.y-rS.y)**2);
+    const sw = Math.sqrt((lS.x - rS.x) ** 2 + (lS.y - rS.y) ** 2);
     if (sw < 0.01) return null;
     const idx = this.isFullBody(lms) ? FULL_BODY_IDX : UPPER_BODY_IDX;
     return idx.map(i => ({
@@ -38,44 +38,47 @@ class DTW {
     if (n === 0) return 1;
     let total = 0;
     for (let i = 0; i < n; i++)
-      total += Math.sqrt((a[i].x-b[i].x)**2 + (a[i].y-b[i].y)**2 + (a[i].z-b[i].z)**2);
+      total += Math.sqrt((a[i].x - b[i].x) ** 2 + (a[i].y - b[i].y) ** 2 + (a[i].z - b[i].z) ** 2);
     return total / n;
   }
   static compute(s1: NormFrame[], s2: NormFrame[]): number {
     const n = s1.length, m = s2.length;
-    const mat: number[][] = Array.from({length: n+1}, () => new Array(m+1).fill(Infinity));
+    const mat: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(Infinity));
     mat[0][0] = 0;
     for (let i = 1; i <= n; i++)
       for (let j = 1; j <= m; j++) {
-        const cost = this.frameDistance(s1[i-1], s2[j-1]);
-        mat[i][j] = cost + Math.min(mat[i-1][j], mat[i][j-1], mat[i-1][j-1]);
+        const cost = this.frameDistance(s1[i - 1], s2[j - 1]);
+        mat[i][j] = cost + Math.min(mat[i - 1][j], mat[i][j - 1], mat[i - 1][j - 1]);
       }
     return mat[n][m] / (n + m);
   }
   static similarity(dist: number): number {
-    const raw = Math.max(0, 100 * (1 - dist / 1.0));
-    return raw > 50 ? Math.min(100, Math.round(raw * 1.2)) : Math.round(raw);
+    // dist=0 -> 100%, dist=0.7 -> 0%. Wider divisor = more tolerant.
+    const raw = Math.max(0, 100 * (1 - dist / 0.7));
+    return raw > 50 ? Math.min(100, Math.round(raw * 1.1)) : Math.round(raw);
   }
 }
 
 interface LiveMatchResult { similarity: number; repCount: number; status: string; }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// KEYFRAME MATCHER
+// ─────────────────────────────────────────────────────────────────────────────
+
 class LiveMatcher {
   private template: NormFrame[];
-  private windowSize: number;
-  private buffer: NormFrame[] = [];
   repCount = 0;
+  currentTargetIndex = 0;
   private isCooldown = false;
   private readonly cooldownMs = 1500;
-  private readonly repThreshold = 75;
-  private lastSampleMs = 0;
-  private readonly sampleIntervalMs = 100; // ≈ 10 fps, matching template extraction rate
+  private readonly repThreshold = 60;  // lower = more tolerant
   private _lastResult: LiveMatchResult | null = null;
+  private buffer: NormFrame[] = [];
 
   constructor(frames: NormFrame[]) {
     this.template = frames;
-    this.windowSize = Math.round(frames.length * 1.5);
   }
+
   private smooth(frame: NormFrame): NormFrame {
     if (this.buffer.length === 0) return frame;
     const last = this.buffer[this.buffer.length - 1];
@@ -86,56 +89,60 @@ class LiveMatcher {
       visibility: lm.visibility,
     }));
   }
+
   processFrame(frame: NormFrame | null): LiveMatchResult {
     if (!frame) return { similarity: 0, repCount: this.repCount, status: "Detecting body..." };
-    const now = Date.now();
-    if (now - this.lastSampleMs < this.sampleIntervalMs)
-      return this._lastResult ?? { similarity: 0, repCount: this.repCount, status: "Preparing..." };
-    this.lastSampleMs = now;
-    this.buffer.push(this.smooth(frame));
-    if (this.buffer.length > this.windowSize) this.buffer.shift();
-    if (this.buffer.length < Math.ceil(this.template.length * 0.5)) {
-      const r = { similarity: 0, repCount: this.repCount, status: "Preparing..." };
-      this._lastResult = r; return r;
+
+    this.buffer.push(frame);
+    if (this.buffer.length > 5) this.buffer.shift();
+    const smoothed = this.smooth(frame);
+
+    if (this.isCooldown || this.template.length === 0) {
+      if (this.isCooldown) return { similarity: 0, repCount: this.repCount, status: "Rep logged — return to start" };
+      return { similarity: 0, repCount: this.repCount, status: "Preparing..." };
     }
-    const tLen = this.template.length;
-    const slices = [
-      this.buffer.slice(-tLen),
-      this.buffer.slice(-Math.round(tLen * 0.8)),
-      this.buffer.slice(-Math.round(tLen * 1.2)),
-    ];
-    let best = 0;
-    for (const slice of slices) {
-      if (slice.length < 5) continue;
-      const s = DTW.similarity(DTW.compute(slice, this.template));
-      if (s > best) best = s;
+
+    const targetFrame = this.template[this.currentTargetIndex];
+
+    // Best-of-buffer: check all recent frames so briefly held poses still count
+    let sim = 0;
+    for (const bf of [...this.buffer, smoothed]) {
+      const s = DTW.similarity(DTW.frameDistance(bf, targetFrame));
+      if (s > sim) sim = s;
     }
-    let status = "Perform Movement";
-    if (best > this.repThreshold && !this.isCooldown) {
-      this.repCount++;
-      this.triggerCooldown();
-      status = "✓ Rep Logged!";
-    } else if (this.isCooldown) {
-      status = "Rep logged — keep going";
-    } else if (best > 40) {
-      status = "Movement detected...";
-    } else if (this.buffer.length >= tLen) {
-      status = "Keep going";
+    const dist = DTW.frameDistance(smoothed, targetFrame); // for logging only
+    console.log(`[LiveMatcher] Pos ${this.currentTargetIndex + 1}/${this.template.length} | dist=${dist.toFixed(3)} bestSim=${sim.toFixed(0)}% | reps=${this.repCount}`);
+
+    let status = `Match Position ${this.currentTargetIndex + 1} of ${this.template.length}`;
+    if (sim >= this.repThreshold) {
+      this.currentTargetIndex++;
+      console.log(`[LiveMatcher] ✓ Hit keyframe! Now targeting ${this.currentTargetIndex}/${this.template.length}`);
+      if (this.currentTargetIndex >= this.template.length) {
+        this.repCount++;
+        this.currentTargetIndex = 0;
+        this.triggerCooldown();
+        status = "✓ Rep Logged!";
+        console.log(`[LiveMatcher] ✓✓ REP! Total: ${this.repCount}`);
+      } else {
+        status = "✓ Hit! Move to next position.";
+      }
+    } else if (sim > 50) {
+      status = "Getting closer...";
     }
-    const result = { similarity: best, repCount: this.repCount, status };
+
+    const result = { similarity: sim, repCount: this.repCount, status };
     this._lastResult = result;
     return result;
   }
+
   private triggerCooldown() {
     this.isCooldown = true;
-    setTimeout(() => {
-      this.isCooldown = false;
-      this.buffer = this.buffer.slice(Math.round(this.buffer.length / 2));
-    }, this.cooldownMs);
+    setTimeout(() => { this.isCooldown = false; }, this.cooldownMs);
   }
+
   reset() {
-    this.repCount = 0; this.buffer = []; this.isCooldown = false;
-    this.lastSampleMs = 0; this._lastResult = null;
+    this.repCount = 0; this.currentTargetIndex = 0; this.isCooldown = false;
+    this._lastResult = null; this.buffer = [];
   }
 }
 
@@ -161,23 +168,19 @@ const PatientCustomExercise: React.FC = () => {
 
   const [isActive, setIsActive] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [timer, setTimer] = useState(0);
-  const [matchResult, setMatchResult] = useState<LiveMatchResult>({
-    similarity: 0,
-    repCount: 0,
-    status: "Press Start to begin",
-  });
+  const [similarity, setSimilarity] = useState(0);
+  const [status, setStatus] = useState("Press Start to begin");
+  const [repCount, setRepCount] = useState(0);
 
-  const videoRef  = useRef<HTMLVideoElement>(null);
-  const canvasRef  = useRef<HTMLCanvasElement>(null);
-  const poseRef    = useRef<Pose | null>(null);
-  const streamRef  = useRef<MediaStream | null>(null);
-  const animRef    = useRef<number | null>(null);
-  const stopRef    = useRef(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const poseRef = useRef<Pose | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const animRef = useRef<number | null>(null);
+  const stopRef = useRef(false);
   const matcherRef = useRef<LiveMatcher | null>(null);
   const templateFramesRef = useRef<any[][]>([]);
-  const repCountRef = useRef(0);
-  const timerRef   = useRef<number | null>(null);
+  const dingAudioRef = useRef(new Audio("/ding.mp3"));
 
   // ── Load assignment + template ────────────────────────────────────────────
   useEffect(() => {
@@ -206,10 +209,26 @@ const PatientCustomExercise: React.FC = () => {
         const tmplData = await tmplRes.json();
         setTemplate(tmplData.template);
 
-        // 3. Deserialise frames (33 landmarks per frame) and init TemplateMatcher
-        const normFrames = tmplData.template.frames.map((f: number[][]) =>
+        // 3. Deserialise frames and init LiveMatcher
+        // Handle both formats:
+        //   Correct:  frames[keyframeIdx][landmarkIdx] = [x,y,z,v]   (shape: N x M x 4)
+        //   Legacy buggy: frames[0][keyframeIdx][landmarkIdx] = [x,y,z,v]  (shape: 1 x N x M x 4)
+        let rawFrames: number[][][] = tmplData.template.frames;
+        // Detect the extra nesting: if frames.length===1 and frames[0][0][0] is an array (not a number)
+        if (
+          rawFrames.length === 1 &&
+          Array.isArray(rawFrames[0]) &&
+          Array.isArray(rawFrames[0][0]) &&
+          Array.isArray((rawFrames[0][0] as unknown as number[][])[0])
+        ) {
+          console.log("[PatientCustomExercise] Detected legacy nested frames format — unwrapping outer array");
+          rawFrames = rawFrames[0] as unknown as number[][][];
+        }
+        console.log("[PatientCustomExercise] Template frames count:", rawFrames.length, "landmarks per frame:", rawFrames[0]?.length);
+        const normFrames: NormFrame[] = rawFrames.map((f: number[][]) =>
           f.map(([x, y, z, v]) => ({ x, y, z, visibility: v ?? 1 }))
         );
+        console.log("[PatientCustomExercise] normFrames deserialized. Count:", normFrames.length);
         templateFramesRef.current = normFrames;
         matcherRef.current = new LiveMatcher(normFrames);
       } catch (e: any) {
@@ -221,44 +240,43 @@ const PatientCustomExercise: React.FC = () => {
     load();
   }, [assignmentId]);
 
-  // ── Timer ─────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (isActive) {
-      timerRef.current = window.setInterval(() => setTimer(t => t + 1), 1000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [isActive]);
-
   // ── MediaPipe setup ───────────────────────────────────────────────────────
   const initPose = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current) return;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d")!;
+    const dingAudio = dingAudioRef.current;
 
     const pose = new Pose({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}` });
     pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
 
-    pose.onResults((results: Results) => {
-      canvas.width  = videoRef.current!.videoWidth  || 640;
+    pose.onResults((r: Results) => {
+      canvas.width = videoRef.current!.videoWidth || 640;
       canvas.height = videoRef.current!.videoHeight || 480;
       ctx.save();
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      if (results.poseLandmarks) {
-        const norm = PoseNormalizer.normalize(results.poseLandmarks as any);
+      if (r.poseLandmarks) {
+        const norm = PoseNormalizer.normalize(r.poseLandmarks as any);
         if (norm && matcherRef.current) {
           const res = matcherRef.current.processFrame(norm);
-          repCountRef.current = res.repCount;
-          setMatchResult({ similarity: res.similarity, repCount: res.repCount, status: res.status });
-          const col = res.similarity >= 75 ? "#10b981" : res.similarity >= 45 ? "#f59e0b" : "#94a3b8";
-          drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: col, lineWidth: 2 });
-          drawLandmarks(ctx, results.poseLandmarks, { color: "#ffffff", lineWidth: 1, radius: 3 });
+          setSimilarity(res.similarity);
+          setStatus(res.status);
+
+          if (res.repCount > repCount) { // Use state directly for comparison
+            setRepCount(res.repCount);
+            dingAudio.currentTime = 0;
+            dingAudio.play().catch(e => console.log("Audio play failed:", e));
+          }
+          drawConnectors(ctx, r.poseLandmarks, POSE_CONNECTIONS, { color: "#14b8a6", lineWidth: 3 });
+          drawLandmarks(ctx, r.poseLandmarks, { color: "#fff", fillColor: "#14b8a6", radius: 5 });
         } else {
-          drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: "#00e5cc", lineWidth: 2 });
-          drawLandmarks(ctx, results.poseLandmarks, { color: "#ffffff", lineWidth: 1, radius: 3 });
+          drawConnectors(ctx, r.poseLandmarks, POSE_CONNECTIONS, { color: "#00e5cc", lineWidth: 2 });
+          drawLandmarks(ctx, r.poseLandmarks, { color: "#ffffff", lineWidth: 1, radius: 3 });
         }
+      } else if (matcherRef.current) {
+        const res = matcherRef.current.processFrame(null);
+        setStatus(res.status);
       }
       ctx.restore();
     });
@@ -270,8 +288,7 @@ const PatientCustomExercise: React.FC = () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
       streamRef.current = stream;
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
+      if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play(); }
       const sendLoop = async () => {
         if (stopRef.current) return;
         if (videoRef.current && videoRef.current.readyState >= 2)
@@ -282,18 +299,9 @@ const PatientCustomExercise: React.FC = () => {
     } catch (e: any) {
       alert("Camera error: " + e.message);
     }
-  }, []);
+  }, [repCount]); // Added repCount to dependencies to ensure dingAudio logic works with latest state
 
-  const stopCamera = useCallback(() => {
-    stopRef.current = true;
-    if (animRef.current) { cancelAnimationFrame(animRef.current); animRef.current = null; }
-    streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null;
-    if (videoRef.current) videoRef.current.srcObject = null;
-    poseRef.current?.close(); poseRef.current = null;
-  }, []);
-
-  // ── Session control ───────────────────────────────────────────────────────
-  const handleStart = async () => {
+  const startLive = async () => {
     if (!assignmentId) return;
     const token = localStorage.getItem("token");
     try {
@@ -307,19 +315,25 @@ const PatientCustomExercise: React.FC = () => {
       setSessionId(data.session.id);
       setIsActive(true);
       matcherRef.current = new LiveMatcher(templateFramesRef.current);
-      repCountRef.current = 0;
-      setMatchResult({ similarity: 0, repCount: 0, status: "Perform the exercise" });
+      setRepCount(0);
+      setSimilarity(0);
+      setStatus("Perform the exercise");
       initPose();
     } catch (e: any) {
       alert(`Could not start session: ${e.message}`);
     }
   };
 
-  const handleEnd = async () => {
+  const stopLive = async () => {
     if (!sessionId) return;
     const token = localStorage.getItem("token");
-    stopCamera();
+    stopRef.current = true;
+    if (animRef.current) { cancelAnimationFrame(animRef.current); animRef.current = null; }
+    streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    poseRef.current?.close(); poseRef.current = null;
     setIsActive(false);
+    setStatus("Session stopped");
 
     try {
       await fetch("http://localhost:5000/session/complete", {
@@ -331,14 +345,9 @@ const PatientCustomExercise: React.FC = () => {
       console.error("Failed to complete session", e);
     }
 
-    const reps = repCountRef.current;
-    const mins = Math.floor(timer / 60), secs = timer % 60;
-    alert(`Session complete!\n\nReps: ${reps}\nDuration: ${mins}:${secs < 10 ? "0" : ""}${secs}`);
+    alert(`Session complete!\n\nReps: ${repCount}`);
     navigate("/patient");
   };
-
-  // ── Format timer ─────────────────────────────────────────────────────────
-  const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
   // ── Similarity colour ─────────────────────────────────────────────────────
   const simColour = (s: number) =>
@@ -390,7 +399,7 @@ const PatientCustomExercise: React.FC = () => {
 
         {/* Back button */}
         <button
-          onClick={() => { stopCamera(); navigate("/patient"); }}
+          onClick={() => { stopLive(); navigate("/patient"); }}
           className="absolute top-4 left-4 z-20 flex items-center gap-1.5 px-3 py-2 bg-slate-800/80 hover:bg-slate-700 text-white rounded-xl text-sm font-medium transition"
         >
           <ChevronLeft size={16} /> Dashboard
@@ -400,11 +409,11 @@ const PatientCustomExercise: React.FC = () => {
         {isActive && (
           <div className="absolute inset-0 z-20 flex items-end justify-center pb-8 pointer-events-none">
             <div className="bg-slate-900/80 backdrop-blur-sm rounded-2xl px-6 py-3 flex items-center gap-4">
-              <div className={`text-4xl font-black ${simColour(matchResult.similarity)}`}>
-                {matchResult.similarity}%
+              <div className={`text-4xl font-black ${simColour(similarity)}`}>
+                {similarity}%
               </div>
               <div className="border-l border-slate-600 pl-4">
-                <p className="text-white font-semibold text-sm leading-tight">{matchResult.status}</p>
+                <p className="text-white font-semibold text-sm leading-tight">{status}</p>
                 <p className="text-slate-400 text-xs mt-0.5">Match Score</p>
               </div>
             </div>
@@ -448,7 +457,7 @@ const PatientCustomExercise: React.FC = () => {
               <span>Reps Done</span>
             </div>
             <span className="text-white font-black text-xl">
-              {matchResult.repCount}
+              {repCount}
               <span className="text-slate-500 font-normal text-sm"> / {targetReps}</span>
             </span>
           </div>
@@ -458,8 +467,8 @@ const PatientCustomExercise: React.FC = () => {
               <Zap size={16} />
               <span>Match</span>
             </div>
-            <span className={`font-black text-xl ${simColour(matchResult.similarity)}`}>
-              {matchResult.similarity}%
+            <span className={`font-black text-xl ${simColour(similarity)}`}>
+              {similarity}%
             </span>
           </div>
 
@@ -467,26 +476,20 @@ const PatientCustomExercise: React.FC = () => {
           <div className="w-full bg-slate-700 rounded-full h-2">
             <div
               className="h-2 rounded-full transition-all duration-300 bg-gradient-to-r from-teal-500 to-emerald-400"
-              style={{ width: `${Math.min(100, (matchResult.repCount / Math.max(targetReps, 1)) * 100)}%` }}
+              style={{ width: `${Math.min(100, (repCount / Math.max(targetReps, 1)) * 100)}%` }}
             />
-          </div>
-
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-slate-400">Timer</span>
-            <span className="text-white font-bold font-mono">{fmt(timer)}</span>
           </div>
         </div>
 
         {/* Status message */}
         {isActive && (
-          <div className={`rounded-xl px-4 py-3 text-sm font-medium text-center transition-all ${
-            matchResult.status.includes("✓")
-              ? "bg-emerald-500/20 text-emerald-300"
-              : matchResult.similarity > 40
+          <div className={`rounded-xl px-4 py-3 text-sm font-medium text-center transition-all ${status.includes("✓")
+            ? "bg-emerald-500/20 text-emerald-300"
+            : similarity > 40
               ? "bg-teal-500/10 text-teal-300"
               : "bg-slate-800 text-slate-400"
-          }`}>
-            {matchResult.status}
+            }`}>
+            {status}
           </div>
         )}
 
@@ -496,7 +499,7 @@ const PatientCustomExercise: React.FC = () => {
         {/* Action button */}
         {!isActive ? (
           <button
-            onClick={handleStart}
+            onClick={startLive}
             className="w-full flex items-center justify-center gap-2 bg-teal-500 hover:bg-teal-600 text-white py-4 rounded-2xl font-bold text-base transition-all shadow-xl shadow-teal-500/20 active:scale-95"
           >
             <Play size={20} fill="white" />
@@ -504,7 +507,7 @@ const PatientCustomExercise: React.FC = () => {
           </button>
         ) : (
           <button
-            onClick={handleEnd}
+            onClick={stopLive}
             className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white py-4 rounded-2xl font-bold text-base transition-all shadow-xl shadow-red-500/20 active:scale-95"
           >
             <StopCircle size={20} />

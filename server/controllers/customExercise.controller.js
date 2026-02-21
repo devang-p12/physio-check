@@ -12,7 +12,7 @@ export const uploadTemplate = async (req, res) => {
   const doctorId = req.user.id;
   const { name, description, category, frameCount, durationSeconds, frames } = req.body;
 
-  if (!name || !frames || !frameCount || !durationSeconds) {
+  if (!name || !frames || frameCount == null || durationSeconds == null) {
     return res.status(400).json({ message: 'name, frames, frameCount and durationSeconds are required' });
   }
 
