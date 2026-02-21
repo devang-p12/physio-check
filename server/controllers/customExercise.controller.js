@@ -10,10 +10,22 @@ import { findUserById } from '../models/User.model.js';
 // ─── Doctor: upload a new template ──────────────────────────────────────────
 export const uploadTemplate = async (req, res) => {
   const doctorId = req.user.id;
-  const { name, description, category, frameCount, durationSeconds, frames } = req.body;
+  const {
+    name, description, category,
+    frameCount, durationSeconds, frames,
+    exerciseMode, exerciseType, stretchConfig,
+  } = req.body;
 
-  if (!name || !frames || frameCount == null || durationSeconds == null) {
-    return res.status(400).json({ message: 'name, frames, frameCount and durationSeconds are required' });
+  if (!name || frameCount == null || durationSeconds == null) {
+    return res.status(400).json({ message: 'name, frameCount and durationSeconds are required' });
+  }
+
+  // Stretch templates need stretchConfig; workout templates need frames
+  if (exerciseMode === 'stretch' && (!stretchConfig?.lm1 == null || stretchConfig?.lm2 == null || !stretchConfig?.direction)) {
+    return res.status(400).json({ message: 'stretchConfig (lm1, lm2, direction) required for stretch exercises' });
+  }
+  if (exerciseMode !== 'stretch' && !frames) {
+    return res.status(400).json({ message: 'frames required for workout exercises' });
   }
 
   try {
@@ -22,9 +34,12 @@ export const uploadTemplate = async (req, res) => {
       description: description || '',
       category: category || 'Custom',
       createdBy: doctorId,
+      exerciseMode: exerciseMode || 'workout',
+      exerciseType: exerciseType || 'body',
       frameCount,
       durationSeconds,
-      frames,
+      frames: frames || [],
+      stretchConfig: stretchConfig || undefined,
     });
 
     return res.status(201).json({
@@ -34,8 +49,11 @@ export const uploadTemplate = async (req, res) => {
         name: template.name,
         description: template.description,
         category: template.category,
+        exerciseMode: template.exerciseMode,
+        exerciseType: template.exerciseType,
         frameCount: template.frameCount,
         durationSeconds: template.durationSeconds,
+        stretchConfig: template.stretchConfig,
         createdAt: template.createdAt,
       },
     });

@@ -1,9 +1,10 @@
 import mongoose from 'mongoose';
 
 /**
- * Stores a doctor-recorded exercise template.
- * `frames` is the compact array produced by CreateExercise.tsx:
- *   frames[i][j] = [x, y, z, visibility]  (normalised landmarks)
+ * exerciseMode: 'workout' = rep counting | 'stretch' = distance-hold tracking
+ * exerciseType: 'body' = full pose | 'palm' = hand landmarks
+ * stretchConfig: only set when exerciseMode === 'stretch'
+ * frames: keyframe snapshots (empty array is OK for stretch-only templates)
  */
 const customExerciseTemplateSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
@@ -14,10 +15,17 @@ const customExerciseTemplateSchema = new mongoose.Schema({
     ref: 'User',
     required: true,
   },
+  exerciseMode: { type: String, enum: ['workout', 'stretch'], default: 'workout' },
+  exerciseType: { type: String, enum: ['body', 'palm'], default: 'body' },
   frameCount: { type: Number, required: true },
   durationSeconds: { type: Number, required: true },
-  /** Raw frames as produced by PoseNormalizer.serialise() in CreateExercise */
-  frames: { type: [[[[Number]]]], required: true },
+  frames: { type: [[[[Number]]]], default: [] },
+  /** Only set when exerciseMode === 'stretch' */
+  stretchConfig: {
+    lm1: { type: Number },           // landmark index (0-32 for pose, 0-20 for palm)
+    lm2: { type: Number },
+    direction: { type: String, enum: ['inward', 'outward'] },
+  },
 }, { timestamps: true });
 
 const CustomExerciseTemplate = mongoose.model(
@@ -30,11 +38,11 @@ export const createTemplate = async (data) =>
 
 export const getTemplatesByDoctor = async (doctorId) =>
   CustomExerciseTemplate.find({ createdBy: doctorId })
-    .select('-frames')          // exclude frames for list view — keeps payload small
+    .select('-frames')
     .sort({ createdAt: -1 });
 
 export const getTemplateById = async (id) =>
-  CustomExerciseTemplate.findById(id);  // includes frames for patient playback
+  CustomExerciseTemplate.findById(id);
 
 export const deleteTemplate = async (id, doctorId) =>
   CustomExerciseTemplate.findOneAndDelete({ _id: id, createdBy: doctorId });

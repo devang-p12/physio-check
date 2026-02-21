@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Play, StopCircle, ChevronLeft, Activity, Repeat2, Zap } from "lucide-react";
+import { Play, StopCircle, ChevronLeft, Activity, Repeat2, Zap, Expand } from "lucide-react";
 import { Pose, POSE_CONNECTIONS } from "@mediapipe/pose";
 import type { Results } from "@mediapipe/pose";
 import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
+import { Hands, HAND_CONNECTIONS } from "@mediapipe/hands";
+import type { Results as HandResults } from "@mediapipe/hands";
 
 // ───────────────────────────────────────────────────────────────────────────────
 interface NormLandmark { x: number; y: number; z: number; visibility: number; }
@@ -28,6 +30,24 @@ class PoseNormalizer {
     return idx.map(i => ({
       x: (lms[i].x - cx) / sw, y: (lms[i].y - cy) / sw, z: (lms[i].z - cz) / sw,
       visibility: lms[i].visibility ?? 1,
+    }));
+  }
+  static deserialise(raw: number[][]): NormFrame {
+    return raw.map(([x, y, z, visibility]) => ({ x, y, z, visibility }));
+  }
+}
+
+class HandNormalizer {
+  static normalize(lms: any[]): NormFrame | null {
+    if (!lms || lms.length < 21) return null;
+    const wrist = lms[0], midMcp = lms[9];
+    const scale = Math.sqrt((wrist.x - midMcp.x) ** 2 + (wrist.y - midMcp.y) ** 2 + (wrist.z - midMcp.z) ** 2);
+    if (scale < 0.01) return null;
+    return lms.map((lm) => ({
+      x: (lm.x - wrist.x) / scale,
+      y: (lm.y - wrist.y) / scale,
+      z: (lm.z - wrist.z) / scale,
+      visibility: lm.visibility ?? 1,
     }));
   }
 }
@@ -146,14 +166,19 @@ class LiveMatcher {
   }
 }
 
+interface StretchConfig { lm1: number; lm2: number; direction: "inward" | "outward"; }
+
 interface Template {
   id: string;
   name: string;
   description: string;
   category: string;
+  exerciseMode: "workout" | "stretch";
+  exerciseType: "body" | "palm";
   frameCount: number;
   durationSeconds: number;
-  frames: number[][][];  // frames[i][j] = [x,y,z,vis] — normalised sparse landmarks
+  frames: number[][][];
+  stretchConfig?: StretchConfig;
 }
 
 const PatientCustomExercise: React.FC = () => {
@@ -163,6 +188,7 @@ const PatientCustomExercise: React.FC = () => {
 
   const [assignment, setAssignment] = useState<any>(null);
   const [template, setTemplate] = useState<Template | null>(null);
+  const templateRef = useRef<Template | null>(null);  // accessible inside initPose closure
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -171,6 +197,13 @@ const PatientCustomExercise: React.FC = () => {
   const [similarity, setSimilarity] = useState(0);
   const [status, setStatus] = useState("Press Start to begin");
   const [repCount, setRepCount] = useState(0);
+
+  // Stretch phase 2 state
+  const [stretchDist, setStretchDist] = useState(0);       // normalised distance between lm1 & lm2
+  const [bestStretchDist, setBestStretchDist] = useState<number | null>(null);
+  const [holdSecs, setHoldSecs] = useState(0);
+  const holdTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isPhase2Ref = useRef(false);  // mutable mirror for onResults closure
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -208,6 +241,7 @@ const PatientCustomExercise: React.FC = () => {
         if (!tmplRes.ok) throw new Error("Failed to load exercise template");
         const tmplData = await tmplRes.json();
         setTemplate(tmplData.template);
+        templateRef.current = tmplData.template;
 
         // 3. Deserialise frames and init LiveMatcher
         // Handle both formats:
@@ -240,50 +274,150 @@ const PatientCustomExercise: React.FC = () => {
     load();
   }, [assignmentId]);
 
-  // ── MediaPipe setup ───────────────────────────────────────────────────────
   const initPose = useCallback(async () => {
-    if (!videoRef.current || !canvasRef.current) return;
+    if (!videoRef.current || !canvasRef.current || !templateRef.current) return;
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d")!;
+    let ctx = canvas.getContext("2d")!;
     const dingAudio = dingAudioRef.current;
 
-    const pose = new Pose({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}` });
-    pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    const isStretch = templateRef.current.exerciseMode === "stretch";
+    const isPalm = templateRef.current.exerciseType === "palm" || templateRef.current.name.toLowerCase().includes("palm");
+    const runHands = isPalm || isStretch;
+    const runPose = !isPalm || isStretch;
 
-    pose.onResults((r: Results) => {
-      canvas.width = videoRef.current!.videoWidth || 640;
-      canvas.height = videoRef.current!.videoHeight || 480;
-      ctx.save();
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let hands: Hands | null = null;
+    let pose: Pose | null = null;
 
-      if (r.poseLandmarks) {
-        const norm = PoseNormalizer.normalize(r.poseLandmarks as any);
-        if (norm && matcherRef.current) {
-          const res = matcherRef.current.processFrame(norm);
-          setSimilarity(res.similarity);
-          setStatus(res.status);
+    // We need a way to combine landmarks for stretch phase 2
+    let latestPoseLms: any[] | null = null;
+    let latestHandLms: any[] | null = null;
 
-          if (res.repCount > repCount) { // Use state directly for comparison
-            setRepCount(res.repCount);
-            dingAudio.currentTime = 0;
-            dingAudio.play().catch(e => console.log("Audio play failed:", e));
+    const processPhase2 = () => {
+      if (!isPhase2Ref.current) return;
+      const sc = templateRef.current?.stretchConfig;
+      if (!sc) return;
+
+      // In stretch mode, the landmark could be a body point (0-32) or a hand point (0-20)
+      // If we selected a hand point, it was picked from PALM_STRETCH_OPTIONS.
+      // We will look in both arrays based on what is available. 
+      // Note: for simplicity, since CreateExercise dropdown just gives an index, 
+      // if it's a palm exercise we assume indices refer to handLms, else poseLms.
+      // If combined (stretch), we check if the idx is < 21 (could be either, but usually hand if palm mode, or we just trust the mode).
+      // Actually, CreateExercise only shows Hand options if isPalmExercise is true on creation. 
+      const sourceLms = isPalm ? latestHandLms : latestPoseLms;
+
+      if (sourceLms && sourceLms[sc.lm1] && sourceLms[sc.lm2]) {
+        const p1 = sourceLms[sc.lm1], p2 = sourceLms[sc.lm2];
+        const dist = Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
+        setStretchDist(dist);
+        setBestStretchDist(prev =>
+          sc.direction === "inward"
+            ? (prev === null ? dist : Math.min(prev, dist))
+            : (prev === null ? dist : Math.max(prev, dist))
+        );
+        const progress = sc.direction === "inward" ? Math.max(0, 1 - dist / 0.4) : Math.min(1, dist / 0.4);
+        setStatus(`Stretch ${Math.round(progress * 100)}% — ${sc.direction === "inward" ? "bring closer" : "spread apart"}`);
+
+        // Highlight
+        [sc.lm1, sc.lm2].forEach(idx => {
+          const lm = sourceLms[idx];
+          if (!lm) return;
+          ctx.beginPath();
+          ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 14, 0, 2 * Math.PI);
+          ctx.fillStyle = "rgba(250,204,21,0.5)";
+          ctx.strokeStyle = "#fbbf24";
+          ctx.lineWidth = 3;
+          ctx.fill();
+          ctx.stroke();
+        });
+      }
+    };
+
+    if (runHands) {
+      hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+      hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+      hands.onResults((r: HandResults) => {
+        if (stopRef.current) return;
+        const c = canvasRef.current;
+        if (!c) return;
+        const ctx = c.getContext("2d")!;
+
+        latestHandLms = r.multiHandLandmarks?.[0] || null;
+
+        if (r.multiHandLandmarks && r.multiHandLandmarks.length > 0) {
+          for (const handLms of r.multiHandLandmarks) {
+            drawConnectors(ctx, handLms, HAND_CONNECTIONS, { color: "#a78bfa", lineWidth: 3 });
+            drawLandmarks(ctx, handLms, { color: "#fff", fillColor: "#a78bfa", radius: 5 });
           }
+
+          if (!runPose || isPalm) {
+            const norm = HandNormalizer.normalize(r.multiHandLandmarks[0]);
+            if (norm && matcherRef.current && !isPhase2Ref.current) {
+              const res = matcherRef.current.processFrame(norm);
+              setSimilarity(res.similarity); setStatus(res.status);
+              if (res.repCount > repCount) { setRepCount(res.repCount); dingAudio.currentTime = 0; dingAudio.play().catch(() => { }); }
+            } else if (!norm && matcherRef.current && !isPhase2Ref.current) {
+              setStatus(matcherRef.current.processFrame(null).status);
+            }
+          }
+        } else if (!runPose && matcherRef.current && !isPhase2Ref.current) {
+          setStatus(matcherRef.current.processFrame(null).status);
+        }
+        processPhase2();
+      });
+      await hands.initialize();
+    }
+
+    if (runPose) {
+      pose = new Pose({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}` });
+      pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+      pose.onResults((r: Results) => {
+        if (stopRef.current) return;
+        const c = canvasRef.current, v = videoRef.current;
+        if (!c || !v) return;
+        const ctx = c.getContext("2d")!;
+
+        latestPoseLms = r.poseLandmarks as any[] | null;
+
+        // Clear canvas for pose (hands runs in parallel, so clear first here if pose is running)
+        if (!runHands) {
+          c.width = v.videoWidth || 640;
+          c.height = v.videoHeight || 480;
+          ctx.clearRect(0, 0, c.width, c.height);
+        }
+
+        if (r.poseLandmarks) {
           drawConnectors(ctx, r.poseLandmarks, POSE_CONNECTIONS, { color: "#14b8a6", lineWidth: 3 });
           drawLandmarks(ctx, r.poseLandmarks, { color: "#fff", fillColor: "#14b8a6", radius: 5 });
-        } else {
-          drawConnectors(ctx, r.poseLandmarks, POSE_CONNECTIONS, { color: "#00e5cc", lineWidth: 2 });
-          drawLandmarks(ctx, r.poseLandmarks, { color: "#ffffff", lineWidth: 1, radius: 3 });
-        }
-      } else if (matcherRef.current) {
-        const res = matcherRef.current.processFrame(null);
-        setStatus(res.status);
-      }
-      ctx.restore();
-    });
 
-    await pose.initialize();
-    poseRef.current = pose;
+          const norm = PoseNormalizer.normalize(r.poseLandmarks as any);
+          if (norm && matcherRef.current && (!runHands || !isPalm)) {
+            const res = matcherRef.current.processFrame(norm);
+            setSimilarity(res.similarity);
+            setStatus(res.status);
+
+            if (templateRef.current?.exerciseMode === "stretch" && res.repCount > 0 && !isPhase2Ref.current) {
+              isPhase2Ref.current = true; setHoldSecs(0);
+              holdTimerRef.current = setInterval(() => setHoldSecs(s => s + 1), 1000);
+              setStatus("Keyframe matched! Now hold the stretch.");
+            } else if (res.repCount > repCount) {
+              setRepCount(res.repCount); dingAudio.currentTime = 0; dingAudio.play().catch(() => { });
+            }
+          } else if (!norm && matcherRef.current && !isPhase2Ref.current && !runHands) {
+            setStatus(matcherRef.current.processFrame(null).status);
+          }
+        } else if (matcherRef.current && !isPhase2Ref.current && !runHands) {
+          setStatus(matcherRef.current.processFrame(null).status);
+        }
+        processPhase2();
+      });
+      await pose.initialize();
+    }
+
     stopRef.current = false;
+
+    // assign ref just for cleanup purposes
+    poseRef.current = (pose || hands) as unknown as Pose;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
@@ -291,8 +425,17 @@ const PatientCustomExercise: React.FC = () => {
       if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play(); }
       const sendLoop = async () => {
         if (stopRef.current) return;
-        if (videoRef.current && videoRef.current.readyState >= 2)
-          await pose.send({ image: videoRef.current });
+        if (videoRef.current && videoRef.current.readyState >= 2) {
+          const c = canvasRef.current, v = videoRef.current;
+          if (c && v) {
+            c.width = v.videoWidth || 1280; c.height = v.videoHeight || 720;
+            c.getContext("2d")!.clearRect(0, 0, c.width, c.height);
+          }
+          const promises = [];
+          if (pose) promises.push(pose.send({ image: videoRef.current }));
+          if (hands) promises.push(hands.send({ image: videoRef.current }));
+          await Promise.all(promises);
+        }
         animRef.current = requestAnimationFrame(sendLoop);
       };
       animRef.current = requestAnimationFrame(sendLoop);
@@ -315,7 +458,8 @@ const PatientCustomExercise: React.FC = () => {
       setSessionId(data.session.id);
       setIsActive(true);
       matcherRef.current = new LiveMatcher(templateFramesRef.current);
-      setRepCount(0);
+      setRepCount(0); isPhase2Ref.current = false;
+      setBestStretchDist(null); setHoldSecs(0); setStretchDist(0);
       setSimilarity(0);
       setStatus("Perform the exercise");
       initPose();
@@ -329,6 +473,7 @@ const PatientCustomExercise: React.FC = () => {
     const token = localStorage.getItem("token");
     stopRef.current = true;
     if (animRef.current) { cancelAnimationFrame(animRef.current); animRef.current = null; }
+    if (holdTimerRef.current) { clearInterval(holdTimerRef.current); holdTimerRef.current = null; }
     streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     poseRef.current?.close(); poseRef.current = null;
@@ -345,7 +490,12 @@ const PatientCustomExercise: React.FC = () => {
       console.error("Failed to complete session", e);
     }
 
-    alert(`Session complete!\n\nReps: ${repCount}`);
+    const isStretch = template?.exerciseMode === "stretch";
+    alert(
+      isStretch
+        ? `Session complete!\n\nBest stretch: ${bestStretchDist !== null ? (bestStretchDist * 100).toFixed(0) + "% range" : "N/A"}\nHold time: ${holdSecs}s`
+        : `Session complete!\n\nReps: ${repCount}`
+    );
     navigate("/patient");
   };
 
@@ -451,34 +601,66 @@ const PatientCustomExercise: React.FC = () => {
 
         {/* Live stats */}
         <div className="bg-slate-800 rounded-2xl p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-slate-400 text-sm">
-              <Repeat2 size={16} />
-              <span>Reps Done</span>
-            </div>
-            <span className="text-white font-black text-xl">
-              {repCount}
-              <span className="text-slate-500 font-normal text-sm"> / {targetReps}</span>
-            </span>
-          </div>
+          {template?.exerciseMode === "stretch" ? (
+            <>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-slate-400 text-sm">
+                  <Expand size={16} />
+                  <span>Best Stretch</span>
+                </div>
+                <span className={`font-black text-xl ${bestStretchDist !== null ? "text-violet-400" : "text-slate-500"}`}>
+                  {bestStretchDist !== null ? `${(bestStretchDist * 100).toFixed(0)}%` : "--"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-slate-400 text-sm">
+                  <Activity size={16} />
+                  <span>Hold Time</span>
+                </div>
+                <span className="font-black text-xl text-teal-400">
+                  {holdSecs}s
+                </span>
+              </div>
+              {/* Progress bar for stretch */}
+              <div className="w-full bg-slate-700 rounded-full h-2">
+                <div
+                  className="h-2 rounded-full transition-all duration-300 bg-gradient-to-r from-violet-500 to-fuchsia-400"
+                  style={{ width: `${Math.min(100, Math.max(0, stretchDist * 100))}%` }}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-slate-400 text-sm">
+                  <Repeat2 size={16} />
+                  <span>Reps Done</span>
+                </div>
+                <span className="text-white font-black text-xl">
+                  {repCount}
+                  <span className="text-slate-500 font-normal text-sm"> / {targetReps}</span>
+                </span>
+              </div>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-slate-400 text-sm">
-              <Zap size={16} />
-              <span>Match</span>
-            </div>
-            <span className={`font-black text-xl ${simColour(similarity)}`}>
-              {similarity}%
-            </span>
-          </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-slate-400 text-sm">
+                  <Zap size={16} />
+                  <span>Match</span>
+                </div>
+                <span className={`font-black text-xl ${simColour(similarity)}`}>
+                  {similarity}%
+                </span>
+              </div>
 
-          {/* Progress bar */}
-          <div className="w-full bg-slate-700 rounded-full h-2">
-            <div
-              className="h-2 rounded-full transition-all duration-300 bg-gradient-to-r from-teal-500 to-emerald-400"
-              style={{ width: `${Math.min(100, (repCount / Math.max(targetReps, 1)) * 100)}%` }}
-            />
-          </div>
+              {/* Progress bar for reps */}
+              <div className="w-full bg-slate-700 rounded-full h-2">
+                <div
+                  className="h-2 rounded-full transition-all duration-300 bg-gradient-to-r from-teal-500 to-emerald-400"
+                  style={{ width: `${Math.min(100, (repCount / Math.max(targetReps, 1)) * 100)}%` }}
+                />
+              </div>
+            </>
+          )}
         </div>
 
         {/* Status message */}

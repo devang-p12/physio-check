@@ -3,10 +3,13 @@ import {
   X, Upload, Video, StopCircle, Cpu, Download, CheckCircle2,
   AlertCircle, RefreshCcw, ChevronRight, FileVideo, Eye, Activity,
   FlaskConical, Play, Square, BarChart3, Zap, TrendingUp, Repeat2,
+  Hand, Dumbbell, Expand,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Pose, POSE_CONNECTIONS } from "@mediapipe/pose";
 import type { Results } from "@mediapipe/pose";
+import { Hands, HAND_CONNECTIONS } from "@mediapipe/hands";
+import type { Results as HandResults } from "@mediapipe/hands";
 import { Camera } from "@mediapipe/camera_utils";
 import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
 
@@ -17,6 +20,14 @@ import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
 
 type Stage = "idle" | "configuring" | "capturing" | "processing" | "done" | "error";
 type TestStage = "idle" | "running" | "done";
+type ExerciseMode = "workout" | "stretch";
+type ExerciseType = "body" | "palm";
+
+export interface StretchConfig {
+  lm1: number;
+  lm2: number;
+  direction: "inward" | "outward";
+}
 
 /** One normalised landmark */
 interface NormLandmark { x: number; y: number; z: number; visibility: number; }
@@ -30,10 +41,13 @@ interface ExerciseTemplate {
   description: string;
   category: string;
   createdAt: string;
+  exerciseMode: ExerciseMode;
+  exerciseType: ExerciseType;
   frameCount: number;
   durationSeconds: number;
   /** frames[i][j] = [x, y, z, visibility] */
   frames: number[][][];
+  stretchConfig?: StretchConfig;
 }
 
 interface LiveMatchResult { similarity: number; repCount: number; status: string; }
@@ -41,6 +55,31 @@ interface LiveMatchResult { similarity: number; repCount: number; status: string
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONSTANTS – Named pose landmarks for the stretch picker
+// ─────────────────────────────────────────────────────────────────────────────
+
+const POSE_LANDMARK_NAMES: Record<number, string> = {
+  11: "Left Shoulder", 12: "Right Shoulder",
+  13: "Left Elbow", 14: "Right Elbow",
+  15: "Left Wrist", 16: "Right Wrist",
+  23: "Left Hip", 24: "Right Hip",
+  25: "Left Knee", 26: "Right Knee",
+  27: "Left Ankle", 28: "Right Ankle",
+};
+const STRETCH_LANDMARK_OPTIONS = Object.entries(POSE_LANDMARK_NAMES).map(([idx, label]) => ({
+  idx: Number(idx), label,
+}));
+
+const PALM_LANDMARK_NAMES: Record<number, string> = {
+  0: "Wrist", 4: "Thumb Tip",
+  8: "Index Tip", 12: "Middle Tip",
+  16: "Ring Tip", 20: "Pinky Tip",
+};
+const PALM_STRETCH_OPTIONS = Object.entries(PALM_LANDMARK_NAMES).map(([idx, label]) => ({
+  idx: Number(idx), label,
+}));
 
 const FULL_BODY_IDX = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
 const UPPER_BODY_IDX = [11, 12, 13, 14, 15, 16];
@@ -83,10 +122,26 @@ class PoseNormalizer {
     return raw.map(([x, y, z, visibility]) => ({ x, y, z, visibility }));
   }
 }
+// ─────────────────────────────────────────────────────────────────────────────
+// HAND NORMALIZER — wrist-centered, normalised by wrist→middle-mcp distance
+// ─────────────────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DTW  — mirrors reference DTW class
-// ─────────────────────────────────────────────────────────────────────────────
+class HandNormalizer {
+  static normalize(lms: any[]): NormFrame | null {
+    if (!lms || lms.length < 21) return null;
+    const wrist = lms[0], midMcp = lms[9];
+    const scale = Math.sqrt((wrist.x - midMcp.x) ** 2 + (wrist.y - midMcp.y) ** 2 + (wrist.z - midMcp.z) ** 2);
+    if (scale < 0.01) return null;
+    return lms.map((lm) => ({
+      x: (lm.x - wrist.x) / scale,
+      y: (lm.y - wrist.y) / scale,
+      z: (lm.z - wrist.z) / scale,
+      visibility: lm.visibility ?? 1,
+    }));
+  }
+}
+
+
 
 class DTW {
   /** Euclidean distance between two pose frames (no visibility filter — matches reference DTW) */
@@ -721,12 +776,19 @@ const CreateExercise = () => {
   const [exerciseName, setExerciseName] = useState("");
   const [exerciseDesc, setExerciseDesc] = useState("");
   const [category, setCategory] = useState("Full Body");
+  const [exerciseMode, setExerciseMode] = useState<ExerciseMode>("workout");
+  const [stretchConfig, setStretchConfig] = useState<StretchConfig>({ lm1: 13, lm2: 14, direction: "inward" });
   const [numKeyframes, setNumKeyframes] = useState(2);
   const [stage, setStage] = useState<Stage>("idle");
   const [keyframes, setKeyframes] = useState<NormFrame[]>([]);
-  const keyframesRef = useRef<NormFrame[]>([]);  // always up-to-date, avoids stale closure in useEffect
+  const keyframesRef = useRef<NormFrame[]>([]);
   const [currentCaptureIdx, setCurrentCaptureIdx] = useState(0);
   const [countdown, setCountdown] = useState<number | null>(null);
+
+  const [isPalmExercise, setIsPalmExercise] = useState(false);
+  const exerciseType: ExerciseType = isPalmExercise ? "palm" : "body";
+  // Stretch only needs 1 keyframe (starting position)
+  const effectiveNumKeyframes = exerciseMode === "stretch" ? 1 : numKeyframes;
 
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState("");
@@ -766,54 +828,119 @@ const CreateExercise = () => {
       streamRef.current = stream;
       if (liveVideoRef.current) { liveVideoRef.current.srcObject = stream; liveVideoRef.current.play(); }
 
-      // ── start live skeleton overlay (non-blocking) ──
       recCancelRef.current = false;
       (async () => {
         try {
-          const pose = new Pose({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}` });
-          pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-          pose.onResults((r: Results) => {
-            if (recCancelRef.current) return;
-            const c = liveCanvasRef.current, v = liveVideoRef.current;
-            if (!c || !v) return;
-            c.width = v.videoWidth || 1280; c.height = v.videoHeight || 720;
-            const ctx = c.getContext("2d")!;
-            ctx.clearRect(0, 0, c.width, c.height);
-            if (r.poseLandmarks) {
-              drawConnectors(ctx, r.poseLandmarks, POSE_CONNECTIONS, { color: "#14b8a6", lineWidth: 3 });
-              drawLandmarks(ctx, r.poseLandmarks, { color: "#fff", fillColor: "#14b8a6", radius: 5 });
-              setRecordingDetected(true);
+          const runHands = isPalmExercise || exerciseMode === "stretch";
+          const runPose = !isPalmExercise || exerciseMode === "stretch";
 
-              // If we're mid-capture, grab this frame as the keyframe
-              if (captureInProgressRef.current) {
-                const normLms = PoseNormalizer.normalize(r.poseLandmarks);
-                if (normLms) {
-                  captureInProgressRef.current = false; // release flag first
-                  setKeyframes(prev => [...prev, normLms]);
-                  setCurrentCaptureIdx(prev => prev + 1);
-                  // Resume the sendLoop now that capture is complete
-                  if (sendLoopRef.current && !recCancelRef.current) {
-                    recAnimRef.current = requestAnimationFrame(sendLoopRef.current);
+          let hands: Hands | null = null;
+          let pose: Pose | null = null;
+
+          if (runHands) {
+            hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+            hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+            hands.onResults((r: HandResults) => {
+              if (recCancelRef.current) return;
+              const c = liveCanvasRef.current, v = liveVideoRef.current;
+              if (!c || !v) return;
+              const ctx = c.getContext("2d")!;
+
+              if (r.multiHandLandmarks && r.multiHandLandmarks.length > 0) {
+                for (const handLms of r.multiHandLandmarks) {
+                  drawConnectors(ctx, handLms, HAND_CONNECTIONS, { color: "#a78bfa", lineWidth: 3 });
+                  drawLandmarks(ctx, handLms, { color: "#fff", fillColor: "#a78bfa", radius: 5 });
+                }
+                setRecordingDetected(true);
+                // If we are ONLY doing hands OR we just captured, we can save a hand frame
+                if (captureInProgressRef.current && (!runPose || isPalmExercise)) {
+                  const normLms = HandNormalizer.normalize(r.multiHandLandmarks[0]);
+                  if (normLms) {
+                    captureInProgressRef.current = false;
+                    setKeyframes(prev => [...prev, normLms]);
+                    setCurrentCaptureIdx(prev => prev + 1);
+                    if (sendLoopRef.current && !recCancelRef.current) {
+                      recAnimRef.current = requestAnimationFrame(sendLoopRef.current);
+                    }
                   }
                 }
+              } else if (!runPose) {
+                setRecordingDetected(false); // Only unset if pose isn't running
               }
-            } else {
-              setRecordingDetected(false);
-            }
-          });
-          await pose.initialize();
-          if (recCancelRef.current) { pose.close(); return; }
-          recPoseRef.current = pose;
+            });
+            await hands.initialize();
+          }
+
+          if (runPose) {
+            pose = new Pose({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}` });
+            pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+            pose.onResults((r: Results) => {
+              if (recCancelRef.current) return;
+              const c = liveCanvasRef.current, v = liveVideoRef.current;
+              if (!c || !v) return;
+              const ctx = c.getContext("2d")!;
+
+              // Clear canvas for pose (hands runs next/parallel so they share the canvas)
+              if (!runHands) {
+                c.width = v.videoWidth || 1280; c.height = v.videoHeight || 720;
+                ctx.clearRect(0, 0, c.width, c.height);
+              }
+
+              if (r.poseLandmarks) {
+                drawConnectors(ctx, r.poseLandmarks, POSE_CONNECTIONS, { color: "#14b8a6", lineWidth: 3 });
+                drawLandmarks(ctx, r.poseLandmarks, { color: "#fff", fillColor: "#14b8a6", radius: 5 });
+                setRecordingDetected(true);
+
+                if (captureInProgressRef.current && (!runHands || !isPalmExercise)) {
+                  // If Stretch mode combined, we fallback to saving the Pose as the "body" keyframe
+                  // since stretch points can be on either body or hands. In reality, DTW matcher handles whatever we save here.
+                  // For stretch mode we only save 1 frame.
+                  const normLms = PoseNormalizer.normalize(r.poseLandmarks);
+                  if (normLms) {
+                    captureInProgressRef.current = false;
+                    setKeyframes(prev => [...prev, normLms]);
+                    setCurrentCaptureIdx(prev => prev + 1);
+                    if (sendLoopRef.current && !recCancelRef.current) {
+                      recAnimRef.current = requestAnimationFrame(sendLoopRef.current);
+                    }
+                  }
+                }
+              } else if (!runHands) {
+                setRecordingDetected(false);
+              }
+            });
+            await pose.initialize();
+          }
+
+          if (recCancelRef.current) {
+            hands?.close(); pose?.close(); return;
+          }
+
+          recPoseRef.current = (pose || hands) as unknown as Pose;
+
           const sendLoop = async () => {
             if (recCancelRef.current) return;
-            if (captureInProgressRef.current) return;  // fully pause — onResults will restart after capture
+            if (captureInProgressRef.current) return;
             if (liveVideoRef.current && liveVideoRef.current.readyState >= 2) {
-              await pose.send({ image: liveVideoRef.current });
+              // We need to clear the canvas on every tick before the models redraw
+              const c = liveCanvasRef.current, v = liveVideoRef.current;
+              if (c && v) {
+                c.width = v.videoWidth || 1280; c.height = v.videoHeight || 720;
+                c.getContext("2d")!.clearRect(0, 0, c.width, c.height);
+              }
+
+              // Send to both models
+              const promises = [];
+              if (pose) promises.push(pose.send({ image: liveVideoRef.current }));
+              if (hands) promises.push(hands.send({ image: liveVideoRef.current }));
+              await Promise.all(promises);
             }
             recAnimRef.current = requestAnimationFrame(sendLoop);
           };
+
           sendLoopRef.current = sendLoop;
           recAnimRef.current = requestAnimationFrame(sendLoop);
+
         } catch (skErr) { console.warn("Recording skeleton error:", skErr); }
       })();
     } catch (e: any) { setErrorMsg("Camera access denied: " + e.message); setStage("error"); }
@@ -890,9 +1017,12 @@ const CreateExercise = () => {
           name: template.name,
           description: template.description,
           category: template.category,
+          exerciseMode: template.exerciseMode,
+          exerciseType: template.exerciseType,
           frameCount: template.frameCount,
           durationSeconds: template.durationSeconds,
           frames: template.frames,
+          stretchConfig: template.stretchConfig,
         }),
       });
       if (!res.ok) {
@@ -914,14 +1044,14 @@ const CreateExercise = () => {
 
   // When all keyframes are captured during "capturing" stage, stop the camera and move to processing
   useEffect(() => {
-    if (stage === "capturing" && numKeyframes > 0 && keyframes.length >= numKeyframes) {
+    if (stage === "capturing" && effectiveNumKeyframes > 0 && keyframes.length >= effectiveNumKeyframes) {
       stopRecordingSkeleton();
       streamRef.current?.getTracks().forEach(t => t.stop());
       streamRef.current = null;
       if (liveVideoRef.current) liveVideoRef.current.srcObject = null;
       setStage("processing");
     }
-  }, [keyframes.length, numKeyframes, stage]);
+  }, [keyframes.length, effectiveNumKeyframes, stage]);
 
   // Keep keyframesRef up-to-date so the packaging useEffect is never stale
   useEffect(() => { keyframesRef.current = keyframes; }, [keyframes]);
@@ -930,7 +1060,7 @@ const CreateExercise = () => {
   useEffect(() => {
     if (stage === "processing") {
       const kfs = keyframesRef.current;
-      console.log("[CreateExercise] Packaging template. keyframes count:", kfs.length, "data:", JSON.stringify(kfs.map(f => f.length)));
+      console.log("[CreateExercise] Packaging template. keyframes count:", kfs.length);
       if (kfs.length === 0) {
         setErrorMsg("No keyframes captured — try again.");
         setStage("error");
@@ -941,18 +1071,21 @@ const CreateExercise = () => {
           ([lm.x, lm.y, lm.z, lm.visibility ?? 1] as [number, number, number, number])
         )
       );
-      console.log("[CreateExercise] frames serialized shape:", frames.length, "x", frames[0]?.length);
       setTemplate({
-        name: exerciseName.trim(), description: exerciseDesc.trim(), category,
+        name: exerciseName.trim(),
+        description: exerciseDesc.trim(),
+        category,
         createdAt: new Date().toISOString(),
+        exerciseMode,
+        exerciseType,
         frameCount: kfs.length,
         durationSeconds: 0,
         frames,
+        stretchConfig: exerciseMode === "stretch" ? stretchConfig : undefined,
       });
       setStage("done");
     }
-  }, [stage]);
-  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const reset = () => {
     stopRecordingSkeleton();
@@ -962,7 +1095,9 @@ const CreateExercise = () => {
     setProgress(0); setErrorMsg(""); setTemplate(null);
   };
 
-  const canProcess = exerciseName.trim().length > 0 && numKeyframes >= 2 && numKeyframes <= 10;
+  const canProcess =
+    exerciseName.trim().length > 0 &&
+    (exerciseMode === "stretch" || (numKeyframes >= 2 && numKeyframes <= 10));
   const activeTestTemplate = template ?? loadedTestTemplate;
 
   return (
@@ -1014,12 +1149,14 @@ const CreateExercise = () => {
           <>
             <div className="absolute top-6 left-6 z-20 flex items-center gap-3">
               <div className="flex items-center gap-2 bg-red-500/90 text-white text-sm font-bold px-4 py-2 rounded-full backdrop-blur-sm shadow-lg">
-                <span className="w-2 h-2 bg-white rounded-full animate-pulse" /> Capturing: {currentCaptureIdx + 1} of {numKeyframes}
+                <span className="w-2 h-2 bg-white rounded-full animate-pulse" /> Capturing: {currentCaptureIdx + 1} of {effectiveNumKeyframes}
               </div>
               <div className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-full backdrop-blur-sm transition-colors ${recordingDetected ? "bg-teal-500/90 text-white shadow-lg" : "bg-slate-800/80 text-slate-400"
                 }`}>
                 <span className={`w-2 h-2 rounded-full ${recordingDetected ? "bg-white" : "bg-slate-500"}`} />
-                {recordingDetected ? "Pose detected" : "Looking for body…"}
+                {recordingDetected
+                  ? (isPalmExercise ? "Hand detected" : "Pose detected")
+                  : (isPalmExercise ? "Looking for hand…" : "Looking for body…")}
               </div>
             </div>
 
@@ -1117,16 +1254,101 @@ const CreateExercise = () => {
             <input type="text" value={exerciseName} onChange={e => setExerciseName(e.target.value)}
               placeholder="e.g. Seated Knee Extension" disabled={stage === "processing" || stage === "done"}
               className="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-800 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-transparent transition-all disabled:bg-slate-50 disabled:text-slate-400 text-sm" />
+            {isPalmExercise && (
+              <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-violet-600">
+                <Hand size={12} /> Palm exercise detected — hand skeleton will be used
+              </p>
+            )}
           </div>
 
+          {/* WORKOUT / STRETCH toggle */}
           <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Number of Keyframes <span className="text-red-400">*</span></label>
-            <div className="flex items-center gap-4">
-              <input type="range" min="2" max="10" value={numKeyframes} onChange={e => setNumKeyframes(parseInt(e.target.value))} disabled={stage !== "idle"} className="flex-1 accent-teal-500" />
-              <span className="w-8 text-center text-slate-800 font-black">{numKeyframes}</span>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Exercise Mode</label>
+            <div className="flex rounded-xl overflow-hidden border border-slate-200">
+              {(["workout", "stretch"] as ExerciseMode[]).map(mode => (
+                <button key={mode} disabled={stage !== "idle"}
+                  onClick={() => setExerciseMode(mode)}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-bold transition-all ${exerciseMode === mode
+                    ? mode === "stretch" ? "bg-violet-500 text-white" : "bg-teal-500 text-white"
+                    : "bg-white text-slate-400 hover:bg-slate-50"
+                    }`}>
+                  {mode === "workout" ? <Dumbbell size={15} /> : <Expand size={15} />}
+                  {mode === "workout" ? "WORKOUT" : "STRETCH"}
+                </button>
+              ))}
             </div>
-            <p className="text-xs text-slate-400 mt-1">How many distinct positions defines one full repetition?</p>
+            {exerciseMode === "stretch" && (
+              <p className="text-xs text-slate-400 mt-1">Patient first matches the starting keyframe, then holds the stretch.</p>
+            )}
           </div>
+
+          {/* Exercise Type (Palm vs Body) — only relevant for WORKOUT */}
+          {exerciseMode === "workout" && (
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Tracking Type</label>
+              <div className="flex rounded-xl overflow-hidden border border-slate-200">
+                <button disabled={stage !== "idle"}
+                  onClick={() => setIsPalmExercise(false)}
+                  className={`flex-1 py-2.5 text-sm font-bold transition-all ${!isPalmExercise ? "bg-slate-700 text-white" : "bg-white text-slate-400 hover:bg-slate-50"}`}>
+                  Full Body
+                </button>
+                <button disabled={stage !== "idle"}
+                  onClick={() => setIsPalmExercise(true)}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-bold transition-all ${isPalmExercise ? "bg-violet-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50"}`}>
+                  <Hand size={15} /> Palm / Fingers
+                </button>
+              </div>
+              {isPalmExercise && <p className="text-xs text-violet-500 mt-1 font-semibold flex items-center gap-1"><Hand size={12} /> The exercise name should contain "palm" for best results.</p>}
+            </div>
+          )}
+
+          {/* Keyframe count — hidden for stretch (always 1) */}
+          {exerciseMode === "workout" && (
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Number of Keyframes <span className="text-red-400">*</span></label>
+              <div className="flex items-center gap-4">
+                <input type="range" min="2" max="10" value={numKeyframes} onChange={e => setNumKeyframes(parseInt(e.target.value))} disabled={stage !== "idle"} className="flex-1 accent-teal-500" />
+                <span className="w-8 text-center text-slate-800 font-black">{numKeyframes}</span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">How many distinct positions defines one full repetition?</p>
+            </div>
+          )}
+
+          {/* Stretch config — landmark picker + direction */}
+          {exerciseMode === "stretch" && stage === "idle" && (
+            <div className="space-y-3 bg-violet-50 border border-violet-100 rounded-2xl p-4">
+              <p className="text-xs font-bold text-violet-600 uppercase tracking-wider">Stretch Configuration</p>
+              <div className="grid grid-cols-2 gap-3">
+                {["lm1", "lm2"].map((key, i) => (
+                  <div key={key}>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Point {i + 1}</label>
+                    <select
+                      value={stretchConfig[key as "lm1" | "lm2"]}
+                      onChange={e => setStretchConfig(prev => ({ ...prev, [key]: Number(e.target.value) }))}
+                      className="w-full border border-violet-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-400"
+                    >
+                      {(exerciseMode === "stretch" ? STRETCH_LANDMARK_OPTIONS.concat(PALM_STRETCH_OPTIONS) : isPalmExercise ? PALM_STRETCH_OPTIONS : STRETCH_LANDMARK_OPTIONS).map(opt => (
+                        <option key={opt.idx} value={opt.idx}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-2">Direction</label>
+                <div className="flex rounded-xl overflow-hidden border border-violet-200">
+                  {(["inward", "outward"] as const).map(dir => (
+                    <button key={dir}
+                      onClick={() => setStretchConfig(prev => ({ ...prev, direction: dir }))}
+                      className={`flex-1 py-2 text-xs font-bold transition-all ${stretchConfig.direction === dir ? "bg-violet-500 text-white" : "bg-white text-slate-400 hover:bg-violet-50"
+                        }`}>
+                      {dir === "inward" ? "← Inward (bring closer)" : "Outward → (spread apart)"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Category</label>
