@@ -1,5 +1,8 @@
-import {getTemplateById,
+import {
+  getTemplateById,
   deleteTemplate,
+  createTemplate,
+  getTemplatesByDoctor,
 } from '../models/CustomExerciseTemplate.model.js';
 import { createAssignment } from '../models/Assignment.model.js';
 import { findUserById } from '../models/User.model.js';
