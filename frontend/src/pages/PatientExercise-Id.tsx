@@ -10,6 +10,7 @@ import {
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { usePose } from "../hooks/usePose";
+import { useHands } from "../hooks/useHands";
 import wsService from "../services/websocket.service";
 import { useGoogleFit } from "../hooks/useGoogleFit";
 import ReactionExercise from "../components/ReactionExercise";
@@ -115,8 +116,10 @@ const ExerciseSession = () => {
     return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
   };
 
-  /* ---------------- POSE HOOK ---------------- */
+  /* ---------------- POSE HOOK & HAND HOOK SELECTION --------------- */
   const isReaction = assignment?.exercise?.name === 'Reaction Exercise';
+  const isPalmExercise = assignment?.exercise?.name?.toLowerCase().includes('palm');
+  const useHandTracking = isPalmExercise;
 
   useEffect(() => {
     if (!assignmentId) return;
@@ -139,10 +142,23 @@ const ExerciseSession = () => {
     fetchAssignment();
   }, [assignmentId]);
 
+  // Use hand tracking for palm exercises, pose tracking for body exercises
+  // NOTE: Hooks must always be called unconditionally! We pass isActive=false to disable the unused one
+  useHands({
+    videoRef: videoRef as React.RefObject<HTMLVideoElement>,
+    canvasRef: canvasRef as React.RefObject<HTMLCanvasElement>,
+    isActive: useHandTracking && isActive && !isReaction,
+    tolerances: assignment?.prescription ? (typeof assignment.prescription === 'string' ? JSON.parse(assignment.prescription).tolerances : assignment.prescription.tolerances) : [],
+    exerciseName: assignment?.exercise?.name,
+    onRepUpdate: setReps,
+    onPostureUpdate: setPostureStatus,
+    onCueUpdate: setFormCue,
+  });
+
   usePose({
-    videoRef,
-    canvasRef,
-    isActive: isActive && !isReaction,
+    videoRef: videoRef as React.RefObject<HTMLVideoElement>,
+    canvasRef: canvasRef as React.RefObject<HTMLCanvasElement>,
+    isActive: !useHandTracking && isActive && !isReaction,
     tolerances: assignment?.prescription ? (typeof assignment.prescription === 'string' ? JSON.parse(assignment.prescription).tolerances : assignment.prescription.tolerances) : [],
     exerciseName: assignment?.exercise?.name,
     onRepUpdate: setReps,
