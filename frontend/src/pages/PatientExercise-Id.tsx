@@ -21,12 +21,12 @@ const STRAIN_EMOTIONS = ["angry", "sad", "fearful", "disgusted"];
 
 // Emoji map for display
 const EMOTION_EMOJI: Record<string, string> = {
-  happy:     "😊",
-  neutral:   "😐",
+  happy: "😊",
+  neutral: "😐",
   surprised: "😮",
-  angry:     "😠",
-  sad:       "😢",
-  fearful:   "😨",
+  angry: "😠",
+  sad: "😢",
+  fearful: "😨",
   disgusted: "🤢",
 };
 
@@ -56,11 +56,11 @@ const ExerciseSession = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // ── Emotion / audio refs ───────────────────────────────────────────────────
-  const emotionModelLoaded  = useRef(false);
-  const lastAudioTimeRef    = useRef(0);
-  const frameCounterRef     = useRef(0);
-  const emotionLoopRef      = useRef<number | null>(null);
-  const isActiveRef         = useRef(false);
+  const emotionModelLoaded = useRef(false);
+  const lastAudioTimeRef = useRef(0);
+  const frameCounterRef = useRef(0);
+  const emotionLoopRef = useRef<number | null>(null);
+  const isActiveRef = useRef(false);
 
   // Keep isActiveRef in sync
   useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
@@ -110,8 +110,8 @@ const ExerciseSession = () => {
     const msg = new SpeechSynthesisUtterance(
       "Please do not pressure yourself. Take it slow."
     );
-    msg.rate   = 0.9;
-    msg.pitch  = 1;
+    msg.rate = 0.9;
+    msg.pitch = 1;
     msg.volume = 1;
     window.speechSynthesis.speak(msg);
   }, []);
@@ -347,7 +347,10 @@ const ExerciseSession = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ sessionId })
+        body: JSON.stringify({
+          sessionId,
+          reps
+        })
       });
 
       if (response.ok) {
@@ -478,11 +481,10 @@ const ExerciseSession = () => {
 
         {/* ── Emotion badge — top-right of camera feed ── */}
         {isActive && detectedEmotion && (
-          <div className={`absolute top-4 right-4 z-20 flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold backdrop-blur-sm border transition-all ${
-            isStrain
+          <div className={`absolute top-4 right-4 z-20 flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold backdrop-blur-sm border transition-all ${isStrain
               ? "bg-red-500/20 border-red-500/40 text-red-300"
               : "bg-slate-800/80 border-slate-700 text-slate-300"
-          }`}>
+            }`}>
             <span className="text-lg leading-none">{EMOTION_EMOJI[detectedEmotion] ?? "😐"}</span>
             <span className="capitalize">{detectedEmotion}</span>
             {isStrain && (
@@ -551,11 +553,10 @@ const ExerciseSession = () => {
 
           {/* ── Expression card (sidebar) ── */}
           {isActive && detectedEmotion && (
-            <div className={`rounded-xl px-4 py-3 flex items-center justify-between border transition-all ${
-              isStrain
+            <div className={`rounded-xl px-4 py-3 flex items-center justify-between border transition-all ${isStrain
                 ? "bg-red-50 border-red-200"
                 : "bg-slate-50 border-slate-200"
-            }`}>
+              }`}>
               <div>
                 <p className="text-xs text-slate-500 uppercase tracking-wide font-bold mb-0.5">
                   Expression

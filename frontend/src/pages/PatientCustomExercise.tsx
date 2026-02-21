@@ -283,6 +283,10 @@ const PatientCustomExercise: React.FC = () => {
   // ── Emotion state ─────────────────────────────────────────────────────────
   const [strainEmotion, setStrainEmotion] = useState<string | null>(null);
 
+  // ── Form Score Tracking ───────────────────────────────────────────────────
+  const similaritySumRef = useRef(0);
+  const similarityCountRef = useRef(0);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const poseRef = useRef<Pose | null>(null);
@@ -449,6 +453,12 @@ const PatientCustomExercise: React.FC = () => {
         if (norm && matcherRef.current && (!runHands || !isPalm)) {
           const res = matcherRef.current.processFrame(norm);
           matchSimilarityRef.current = res.similarity;
+
+          if (res.similarity > 0) {
+            similaritySumRef.current += res.similarity;
+            similarityCountRef.current += 1;
+          }
+
           setSimilarity(res.similarity);
           setStatus(res.status);
           setCurrentTargetIdx(matcherRef.current.currentTargetIndex);
@@ -503,6 +513,12 @@ const PatientCustomExercise: React.FC = () => {
             const norm = HandNormalizer.normalize(r.multiHandLandmarks[0]);
             if (norm && matcherRef.current && !isPhase2Ref.current) {
               const res = matcherRef.current.processFrame(norm);
+
+              if (res.similarity > 0) {
+                similaritySumRef.current += res.similarity;
+                similarityCountRef.current += 1;
+              }
+
               setSimilarity(res.similarity); setStatus(res.status);
               setCurrentTargetIdx(matcherRef.current.currentTargetIndex);
               if (res.repCount > repCount) { setRepCount(res.repCount); dingAudio.currentTime = 0; dingAudio.play().catch(() => { }); }
@@ -573,6 +589,9 @@ const PatientCustomExercise: React.FC = () => {
       const data = await res.json();
       setSessionId(data.session.id);
       setIsActive(true);
+
+      similaritySumRef.current = 0;
+      similarityCountRef.current = 0;
       matcherRef.current = new LiveMatcher(templateFramesRef.current);
       setRepCount(0); isPhase2Ref.current = false;
       setBestStretchDist(null); setHoldSecs(0); setStretchDist(0);
@@ -603,11 +622,19 @@ const PatientCustomExercise: React.FC = () => {
     window.speechSynthesis.cancel();
     setStatus("Session stopped");
 
+    const averageSimilarity = similarityCountRef.current > 0
+      ? Math.round(similaritySumRef.current / similarityCountRef.current)
+      : 0;
+
     try {
       await fetch("http://localhost:5000/session/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ sessionId }),
+        body: JSON.stringify({
+          sessionId,
+          reps: repCount,
+          formScore: averageSimilarity
+        }),
       });
     } catch (e) {
       console.error("Failed to complete session", e);
@@ -617,7 +644,7 @@ const PatientCustomExercise: React.FC = () => {
     alert(
       isStretch
         ? `Session complete!\n\nBest stretch: ${bestStretchDist !== null ? (bestStretchDist * 100).toFixed(0) + "% range" : "N/A"}\nHold time: ${holdSecs}s`
-        : `Session complete!\n\nReps: ${repCount}`
+        : `Session complete!\n\nReps: ${repCount}\nForm Score: ${averageSimilarity}%`
     );
     navigate("/patient");
   };
