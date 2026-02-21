@@ -1,9 +1,16 @@
+import dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: join(__dirname, ".env") });
+
 import express from "express";
 import { createServer } from "http";
 import cors from "cors";
 import http from "http";
 import { Server } from "socket.io";
-
+import videoRoutes from "./routes/videoRoutes.js";
 import authRoutes from "./routes/auth.routes.js";
 import doctorRoutes from "./routes/doctor.routes.js";
 import patientRoutes from "./routes/patient.routes.js";
@@ -25,9 +32,6 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 await connectDB();
 
-// Initialize WebSocket server
-initializeWebSocket(server);
-
 app.get("/health", (req, res) => {
   res.json({ status: "OK", message: "Auth service running" });
 });
@@ -36,116 +40,72 @@ app.use("/auth", authRoutes);
 app.use("/doctor", doctorRoutes);
 app.use("/patient", patientRoutes);
 app.use("/appointment", appointmentRoutes);
-
 app.use("/session", sessionRoutes);
-
 app.use("/google-fit", googleFitRoutes);
-
 app.use("/settings", settingsRoutes);
-
-app.use("/appointment", appointmentRoutes);
+app.use("/api/videos", videoRoutes);
 
 // 404 LAST
 app.use((req, res) => {
   res.status(404).json({ message: "route not found" });
 });
 
-
-
 // ✅ CREATE SOCKET SERVER
 const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST"]
-  }
+    methods: ["GET", "POST"],
+  },
 });
-
 
 // ✅ SOCKET DATA MAPS
 const emailToSocketMapping = new Map();
 const socketToEmailMapping = new Map();
 
-
 // ✅ SOCKET CONNECTION
 io.on("connection", (socket) => {
-
   console.log("⚡ User connected:", socket.id);
 
-
   socket.on("join-room", ({ emailId, roomId }) => {
-
     console.log(`User ${emailId} joined room ${roomId}`);
-
     emailToSocketMapping.set(emailId, socket.id);
     socketToEmailMapping.set(socket.id, emailId);
-
     socket.join(roomId);
-
     socket.emit("joined-room", { roomId });
-
-    socket.broadcast.to(roomId).emit("user-joined", {
-      emailId
-    });
-
+    socket.broadcast.to(roomId).emit("user-joined", { emailId });
   });
-
 
   socket.on("call-user", ({ emailId, offer }) => {
-
     const fromEmail = socketToEmailMapping.get(socket.id);
     const socketId = emailToSocketMapping.get(emailId);
-
     if (socketId) {
-      io.to(socketId).emit("incoming-call", {
-        from: fromEmail,
-        offer
-      });
+      io.to(socketId).emit("incoming-call", { from: fromEmail, offer });
     }
-
   });
-
 
   socket.on("call-accepted", ({ emailId, ans }) => {
-
     const socketId = emailToSocketMapping.get(emailId);
-
     if (socketId) {
-      io.to(socketId).emit("call-accepted", {
-        ans
-      });
+      io.to(socketId).emit("call-accepted", { ans });
     }
-
   });
-
 
   socket.on("ice-candidate", ({ to, candidate }) => {
-
     const socketId = emailToSocketMapping.get(to);
-
     if (socketId) {
-      io.to(socketId).emit("ice-candidate", {
-        candidate
-      });
+      io.to(socketId).emit("ice-candidate", { candidate });
     }
-
   });
 
-
   socket.on("disconnect", () => {
-
     const email = socketToEmailMapping.get(socket.id);
-
     if (email) {
       emailToSocketMapping.delete(email);
       socketToEmailMapping.delete(socket.id);
     }
-
     console.log("❌ User disconnected:", socket.id);
-
   });
-
 });
-
 
 // ✅ START SERVER
 server.listen(5000, () => {

@@ -1105,6 +1105,8 @@ const CreateExercise = () => {
   const navigate   = useNavigate();
   const doctorName = localStorage.getItem("name") || "Doctor";
 
+  const [cloudinaryUrl, setCloudinaryUrl] = useState(null);  
+
   const [exerciseName, setExerciseName] = useState("");
   const [exerciseDesc, setExerciseDesc]  = useState("");
   const [category, setCategory]         = useState("Full Body");
@@ -1135,6 +1137,38 @@ const CreateExercise = () => {
   const recCancelRef     = useRef(false);
   const [recordingDetected, setRecordingDetected] = useState(false);
 
+const uploadVideoToServer = async (videoBlob) => {
+  try {
+    const formData = new FormData();
+
+    formData.append("video", videoBlob, "exercise-recording.webm");
+
+    const token = localStorage.getItem("token");
+
+    const res = await fetch("http://localhost:5000/api/videos/upload", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`, // optional if using auth
+      },
+      body: formData,
+    });
+
+    const data = await res.json();
+
+    if (!data.success) {
+      throw new Error(data.message);
+    }
+
+    console.log("Cloudinary URL:", data.videoUrl);
+
+    return data.videoUrl;
+
+  } catch (error) {
+    console.error("Upload failed:", error);
+    throw error;
+  }
+};  
+
   useEffect(() => {
     if (stage === "recording") {
       setRecordingTime(0);
@@ -1164,16 +1198,43 @@ const CreateExercise = () => {
     LOG("recording mimeType:", mimeType || "(browser default)");
     const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
     recorder.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-    recorder.onstop = () => {
+
+    recorder.onstop = async () => {
       stopRecordingSkeleton();
-      const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "video/webm" });
+
+      const blob = new Blob(chunksRef.current, {
+        type: recorder.mimeType || "video/webm"
+      });
+
+      console.log("Uploading video to Cloudinary...");
       LOG("recording stopped", { blobSize: blob.size, blobType: blob.type, chunks: chunksRef.current.length });
+
+      
       stream.getTracks().forEach(t => t.stop()); streamRef.current = null;
       if (liveVideoRef.current) liveVideoRef.current.srcObject = null;
       const url = URL.createObjectURL(blob);
       if (playbackVideoRef.current) { playbackVideoRef.current.src = url; playbackVideoRef.current.controls = true; }
-      setRecordedBlob(blob); setStage("recorded");
+
+      try {
+        const videoUrl = await uploadVideoToServer(blob);
+
+        console.log("Uploaded successfully:", videoUrl);
+
+        // save locally
+        setRecordedBlob(blob);
+
+        // OPTIONAL: store cloudinary URL in state
+        setCloudinaryUrl(videoUrl);
+
+        setStage("recorded");
+
+      } catch (error) {
+        console.error("Upload error:", error);
+        setErrorMsg("Video upload failed");
+        setStage("error");
+      }
     };
+
     recorder.start(1000); mediaRecorderRef.current = recorder; setStage("recording");
     recCancelRef.current = false;
 
@@ -1227,7 +1288,7 @@ const CreateExercise = () => {
       const res = await fetch("http://localhost:5000/doctor/custom-templates", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ name: template.name, description: template.description, category: template.category, frameCount: template.frameCount, durationSeconds: template.durationSeconds, frames: template.frames }),
+        body: JSON.stringify({ name: template.name, description: template.description, category: template.category, frameCount: template.frameCount, durationSeconds: template.durationSeconds, frames: template.frames, videoUrl: cloudinaryUrl }),
       });
       if (!res.ok) { const err = await res.json(); throw new Error(err.message ?? "Save failed"); }
       LOG("saved to library ✅");

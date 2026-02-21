@@ -10,7 +10,7 @@ import { findUserById } from '../models/User.model.js';
 // ─── Doctor: upload a new template ──────────────────────────────────────────
 export const uploadTemplate = async (req, res) => {
   const doctorId = req.user.id;
-  const { name, description, category, frameCount, durationSeconds, frames } = req.body;
+  const { name, description, category, frameCount, durationSeconds, frames, videoUrl } = req.body;
 
   if (!name || !frames || !frameCount || !durationSeconds) {
     return res.status(400).json({ message: 'name, frames, frameCount and durationSeconds are required' });
@@ -25,6 +25,7 @@ export const uploadTemplate = async (req, res) => {
       frameCount,
       durationSeconds,
       frames,
+      videoUrl,
     });
 
     return res.status(201).json({
@@ -36,6 +37,7 @@ export const uploadTemplate = async (req, res) => {
         category: template.category,
         frameCount: template.frameCount,
         durationSeconds: template.durationSeconds,
+        videoUrl: template.videoUrl, 
         createdAt: template.createdAt,
       },
     });
@@ -58,6 +60,7 @@ export const listTemplates = async (req, res) => {
         category: t.category,
         frameCount: t.frameCount,
         durationSeconds: t.durationSeconds,
+        videoUrl: t.videoUrl,
         createdAt: t.createdAt,
       })),
     });
@@ -147,6 +150,7 @@ export const getTemplateForPatient = async (req, res) => {
         category: template.category,
         frameCount: template.frameCount,
         durationSeconds: template.durationSeconds,
+        videoUrl: template.videoUrl,
         frames: template.frames,
       },
     });
