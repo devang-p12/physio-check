@@ -300,9 +300,6 @@ const PostSessionChatbot: React.FC<PostSessionChatbotProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const hasInitialized = useRef(false);
 
-  // ── Put your Gemini API key in .env as VITE_GEMINI_API_KEY ────────────────
-  const geminiApiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY ?? "";
-
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -333,7 +330,7 @@ const PostSessionChatbot: React.FC<PostSessionChatbotProps> = ({
       setSystemPrompt(prompt);
 
       try {
-        const openingMsg = await callGemini(prompt, [], "Hello! Please give me my post-session recap.", geminiApiKey);
+        const openingMsg = await callGemini(prompt, [], "Hello! Please give me my post-session recap.");
         setMessages([{ role: "assistant", content: openingMsg, timestamp: new Date() }]);
       } catch (e) {
         const fallback = sessionSummary.exerciseMode === "stretch"
@@ -365,7 +362,7 @@ const PostSessionChatbot: React.FC<PostSessionChatbotProps> = ({
     setInput("");
     setIsLoading(true);
     try {
-      const reply = await callGemini(systemPrompt, messages, trimmed, geminiApiKey);
+      const reply = await callGemini(systemPrompt, messages, trimmed);
       setMessages(prev => [...prev, { role: "assistant", content: reply, timestamp: new Date() }]);
     } catch {
       setMessages(prev => [...prev, {
@@ -377,16 +374,16 @@ const PostSessionChatbot: React.FC<PostSessionChatbotProps> = ({
       setIsLoading(false);
       setTimeout(() => inputRef.current?.focus(), 100);
     }
-  }, [isLoading, messages, systemPrompt, geminiApiKey]);
+  }, [isLoading, messages, systemPrompt]);
 
   if (!isOpen) return null;
 
   const completionPct = Math.round((sessionSummary.reps / Math.max(sessionSummary.targetReps, 1)) * 100);
   const formGrade =
     sessionSummary.formScore >= 80 ? { label: "Excellent", color: "text-emerald-400", bg: "bg-emerald-500/15 border-emerald-500/30" } :
-    sessionSummary.formScore >= 60 ? { label: "Good", color: "text-teal-400", bg: "bg-teal-500/15 border-teal-500/30" } :
-    sessionSummary.formScore >= 40 ? { label: "Fair", color: "text-yellow-400", bg: "bg-yellow-500/15 border-yellow-500/30" } :
-                                     { label: "Keep Trying", color: "text-slate-400", bg: "bg-slate-700/50 border-slate-600" };
+      sessionSummary.formScore >= 60 ? { label: "Good", color: "text-teal-400", bg: "bg-teal-500/15 border-teal-500/30" } :
+        sessionSummary.formScore >= 40 ? { label: "Fair", color: "text-yellow-400", bg: "bg-yellow-500/15 border-yellow-500/30" } :
+          { label: "Keep Trying", color: "text-slate-400", bg: "bg-slate-700/50 border-slate-600" };
 
   return (
     <>
@@ -471,18 +468,16 @@ const PostSessionChatbot: React.FC<PostSessionChatbotProps> = ({
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
             {messages.map((msg, i) => (
               <div key={i} className={`flex items-start gap-3 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
-                <div className={`shrink-0 w-7 h-7 rounded-xl flex items-center justify-center ${
-                  msg.role === "assistant"
-                    ? "bg-gradient-to-br from-teal-500 to-emerald-600 shadow-md shadow-teal-500/30"
-                    : "bg-slate-600"
-                }`}>
+                <div className={`shrink-0 w-7 h-7 rounded-xl flex items-center justify-center ${msg.role === "assistant"
+                  ? "bg-gradient-to-br from-teal-500 to-emerald-600 shadow-md shadow-teal-500/30"
+                  : "bg-slate-600"
+                  }`}>
                   {msg.role === "assistant" ? <Bot size={14} className="text-white" /> : <User size={14} className="text-white" />}
                 </div>
-                <div className={`max-w-[82%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
-                  msg.role === "assistant"
-                    ? "bg-slate-700/60 border border-slate-600/50 text-slate-100 rounded-tl-sm"
-                    : "bg-teal-500 text-white rounded-tr-sm shadow-md shadow-teal-500/20"
-                }`}>
+                <div className={`max-w-[82%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${msg.role === "assistant"
+                  ? "bg-slate-700/60 border border-slate-600/50 text-slate-100 rounded-tl-sm"
+                  : "bg-teal-500 text-white rounded-tr-sm shadow-md shadow-teal-500/20"
+                  }`}>
                   {msg.content}
                 </div>
               </div>
@@ -554,8 +549,16 @@ const PostSessionChatbot: React.FC<PostSessionChatbotProps> = ({
 };
 
 // ── Standalone Gemini API helper (outside component to avoid recreation) ──────
-async function callGemini(sysPrompt, history, userMessage) {
-  // ... contents building stays the same ...
+async function callGemini(sysPrompt: string, history: ChatMessage[], userMessage: string) {
+  const contents = [
+    { role: "user", parts: [{ text: sysPrompt }] },
+    { role: "model", parts: [{ text: "Understood." }] },
+    ...history.map((msg) => ({
+      role: msg.role === "assistant" ? "model" : "user",
+      parts: [{ text: msg.content }],
+    })),
+    { role: "user", parts: [{ text: userMessage }] },
+  ];
 
   const token = localStorage.getItem("token");
   const res = await fetch("http://localhost:5000/api/gemini/chat", {
@@ -1025,11 +1028,10 @@ const PatientCustomExercise: React.FC = () => {
           {/* Posture overlay */}
           {isActive && (
             <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20">
-              <div className={`flex items-center gap-3 px-6 py-3 rounded-full backdrop-blur-md border shadow-2xl transition-all duration-300 ${
-                postureStatus === "correct"
-                  ? "bg-teal-500/20 border-teal-400/50 text-teal-300"
-                  : "bg-red-500/20 border-red-400/50 text-red-300"
-              }`}>
+              <div className={`flex items-center gap-3 px-6 py-3 rounded-full backdrop-blur-md border shadow-2xl transition-all duration-300 ${postureStatus === "correct"
+                ? "bg-teal-500/20 border-teal-400/50 text-teal-300"
+                : "bg-red-500/20 border-red-400/50 text-red-300"
+                }`}>
                 {postureStatus === "correct" ? (
                   <><CheckCircle2 size={22} fill="currentColor" /><span className="font-bold tracking-wide">Posture Correct</span></>
                 ) : (
@@ -1041,11 +1043,10 @@ const PatientCustomExercise: React.FC = () => {
 
           {/* Emotion badge */}
           {isActive && strainEmotion && (
-            <div className={`absolute top-4 right-4 z-20 flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold backdrop-blur-sm border transition-all ${
-              isStrainEmotion
-                ? "bg-red-500/20 border-red-500/40 text-red-300"
-                : "bg-slate-800/80 border-slate-700 text-slate-300"
-            }`}>
+            <div className={`absolute top-4 right-4 z-20 flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold backdrop-blur-sm border transition-all ${isStrainEmotion
+              ? "bg-red-500/20 border-red-500/40 text-red-300"
+              : "bg-slate-800/80 border-slate-700 text-slate-300"
+              }`}>
               <span className="text-lg leading-none">{EMOTION_EMOJI[strainEmotion] ?? "😐"}</span>
               <span className="capitalize">{strainEmotion}</span>
               {isStrainEmotion && <span className="text-[10px] uppercase tracking-widest text-red-400 font-bold">Strain</span>}
@@ -1170,9 +1171,8 @@ const PatientCustomExercise: React.FC = () => {
 
           {/* Posture cue card */}
           {isActive && (
-            <div className={`mx-4 mt-3 rounded-xl px-4 py-3 flex items-center gap-3 border transition-all ${
-              postureStatus === "correct" ? "bg-teal-500/10 border-teal-500/30" : "bg-red-500/10 border-red-500/30"
-            }`}>
+            <div className={`mx-4 mt-3 rounded-xl px-4 py-3 flex items-center gap-3 border transition-all ${postureStatus === "correct" ? "bg-teal-500/10 border-teal-500/30" : "bg-red-500/10 border-red-500/30"
+              }`}>
               {postureStatus === "correct"
                 ? <CheckCircle2 size={20} className="text-teal-400 shrink-0" />
                 : <AlertCircle size={20} className="text-red-400 shrink-0" />}
@@ -1187,9 +1187,8 @@ const PatientCustomExercise: React.FC = () => {
 
           {/* Expression card */}
           {isActive && strainEmotion && (
-            <div className={`mx-4 mt-3 rounded-xl px-4 py-3 flex items-center justify-between border transition-all ${
-              isStrainEmotion ? "bg-red-500/10 border-red-500/30" : "bg-slate-800 border-slate-700"
-            }`}>
+            <div className={`mx-4 mt-3 rounded-xl px-4 py-3 flex items-center justify-between border transition-all ${isStrainEmotion ? "bg-red-500/10 border-red-500/30" : "bg-slate-800 border-slate-700"
+              }`}>
               <div>
                 <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-0.5">Expression</p>
                 <p className={`font-semibold capitalize text-sm ${isStrainEmotion ? "text-red-300" : "text-emerald-300"}`}>
@@ -1203,11 +1202,10 @@ const PatientCustomExercise: React.FC = () => {
 
           {/* Status message */}
           {isActive && (
-            <div className={`mx-4 mt-3 rounded-xl px-4 py-3 text-sm font-medium text-center transition-all ${
-              status.includes("✓") ? "bg-emerald-500/20 text-emerald-300"
+            <div className={`mx-4 mt-3 rounded-xl px-4 py-3 text-sm font-medium text-center transition-all ${status.includes("✓") ? "bg-emerald-500/20 text-emerald-300"
               : similarity > 40 ? "bg-teal-500/10 text-teal-300"
-              : "bg-slate-800 text-slate-400"
-            }`}>
+                : "bg-slate-800 text-slate-400"
+              }`}>
               {status}
             </div>
           )}

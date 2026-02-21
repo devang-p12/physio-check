@@ -54,20 +54,7 @@ router.post("/chat", auth, async (req, res) => {
     return res.status(400).json({ message: "Invalid request body" });
   }
 
-  // Per-user rate limiting
-  const now = Date.now();
-  const lastRequest = lastRequestPerUser.get(userId) ?? 0;
-  const elapsed = now - lastRequest;
-
-  if (elapsed < MIN_GAP_MS) {
-    const waitSecs = Math.ceil((MIN_GAP_MS - elapsed) / 1000);
-    return res.status(429).json({
-      message: `Please wait ${waitSecs} more second${waitSecs > 1 ? "s" : ""} before sending another message.`,
-      retryAfter: waitSecs,
-    });
-  }
-
-  lastRequestPerUser.set(userId, now);
+  // Removed rate limiting per user request
 
   try {
     const apiKey = process.env.GEMINI_API_KEY;
