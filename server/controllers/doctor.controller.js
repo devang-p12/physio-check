@@ -4,14 +4,14 @@ import { findExerciseById } from "../models/Exercise.model.js";
 import { createAssignment } from "../models/Assignment.model.js";
 
 export const assignExercise = async (req, res) => {
-  const { patientId, exerciseId, date, prescription } = req.body;
+  const { patientId, exerciseId, date, endDate, prescription } = req.body;
 
   if (!patientId || !exerciseId || !date || !prescription) {
     return res.status(400).json({ message: "missing required fields" });
   }
 
   try {
-    const { sets, repsPerSet } = prescription;
+    const { sets, repsPerSet, tolerances = [] } = prescription;
 
     if (
       !Number.isInteger(sets) ||
@@ -21,6 +21,22 @@ export const assignExercise = async (req, res) => {
     ) {
       return res.status(400).json({
         message: "invalid prescription! sets and reps must be a positive integer",
+      });
+    }
+
+    if (!Array.isArray(tolerances)) {
+      return res.status(400).json({
+        message: "invalid tolerances! must be an array of JointTolerance objects",
+      });
+    }
+
+    // validating the tolerances array roughly
+    const isValidTolerances = tolerances.every(
+      (t) => t.joint && typeof t.tolerance === "number" && t.tolerance >= 0 && t.tolerance <= 90
+    );
+    if (!isValidTolerances) {
+      return res.status(400).json({
+        message: "invalid tolerances! each object must have a joint string and a valid tolerance number",
       });
     }
 
@@ -39,7 +55,8 @@ export const assignExercise = async (req, res) => {
       patientId,
       exerciseId,
       date: new Date(date),
-      prescription: JSON.stringify(prescription),
+      endDate: endDate ? new Date(endDate) : undefined,
+      prescription: JSON.stringify({ sets, repsPerSet, tolerances }),
     });
 
     res.status(201).json({
