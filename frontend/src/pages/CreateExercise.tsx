@@ -789,8 +789,8 @@ const CreateExercise = () => {
 
   const [isPalmExercise, setIsPalmExercise] = useState(false);
   const exerciseType: ExerciseType = isPalmExercise ? "palm" : "body";
-  // Stretch only needs 1 keyframe (starting position)
-  const effectiveNumKeyframes = exerciseMode === "stretch" ? 1 : numKeyframes;
+  // Stretch needs exactly 2 keyframes (relaxed and stretched positions)
+  const effectiveNumKeyframes = exerciseMode === "stretch" ? 2 : numKeyframes;
 
   const [keyframeTimestamps, setKeyframeTimestamps] = useState<number[]>([]);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -1335,8 +1335,8 @@ const CreateExercise = () => {
                   {keyframes.map((_, i) => (
                     <div key={i} className="flex items-center gap-2">
                       <div className={`w-4 h-4 rounded-full flex items-center justify-center border ${i < refRecordingTimestampsRef.current.length
-                          ? "bg-emerald-500 border-emerald-400 text-white"
-                          : "border-slate-600 bg-slate-800 text-slate-500"
+                        ? "bg-emerald-500 border-emerald-400 text-white"
+                        : "border-slate-600 bg-slate-800 text-slate-500"
                         }`}>
                         {i < refRecordingTimestampsRef.current.length ? <CheckCircle2 size={10} /> : <span className="text-[10px]">{i + 1}</span>}
                       </div>
@@ -1474,7 +1474,7 @@ const CreateExercise = () => {
               ))}
             </div>
             {exerciseMode === "stretch" && (
-              <p className="text-xs text-slate-400 mt-1">Patient first matches the starting keyframe, then holds the stretch.</p>
+              <p className="text-xs text-slate-400 mt-1">Patient must complete the movement between the relaxed and stretched positions to count a rep.</p>
             )}
           </div>
 
@@ -1498,7 +1498,7 @@ const CreateExercise = () => {
             </div>
           )}
 
-          {/* Keyframe count — hidden for stretch (always 1) */}
+          {/* Keyframe count — hidden for stretch (always 2) */}
           {exerciseMode === "workout" && (
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Number of Keyframes <span className="text-red-400">*</span></label>

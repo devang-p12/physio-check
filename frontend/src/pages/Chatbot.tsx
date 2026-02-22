@@ -40,11 +40,10 @@ const Message = ({ msg, isNew }) => {
         </div>
       )}
       <div
-        className={`max-w-[75%] px-5 py-4 text-sm leading-relaxed shadow-sm ${
-          isUser
+        className={`max-w-[75%] px-5 py-4 text-sm leading-relaxed shadow-sm ${isUser
             ? 'bg-gradient-to-br from-teal-600 to-emerald-600 text-white rounded-2xl rounded-br-sm'
             : 'bg-white border border-slate-100 text-slate-700 rounded-2xl rounded-bl-sm'
-        }`}
+          }`}
       >
         {msg.text}
         <div className={`text-[10px] mt-2 font-medium ${isUser ? 'text-indigo-200' : 'text-slate-400'}`}>
@@ -71,6 +70,29 @@ const ChatbotPage = () => {
   const scrollToBottom = () => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  const fetchGreeting = async () => {
+    try {
+      setIsTyping(true);
+      const res = await fetch(`${BASE_URL}/chatbot/greeting`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      const data = await res.json();
+      if (data.reply) {
+        setMessages([{ role: 'bot', text: data.reply, time: formatTime() }]);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchGreeting();
+  }, []);
 
   useEffect(() => {
     scrollToBottom();
@@ -104,7 +126,10 @@ const ChatbotPage = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ message: userText }),
+        body: JSON.stringify({
+          message: userText,
+          chatHistory: JSON.stringify(messages)
+        }),
       });
 
       const data = await res.json();
@@ -139,6 +164,7 @@ const ChatbotPage = () => {
   const handleReset = () => {
     setMessages([]);
     setInput('');
+    fetchGreeting();
     inputRef.current?.focus();
   };
 

@@ -76,7 +76,8 @@ const sessionSchema = new mongoose.Schema({
       issues: [String] // e.g., ["poor posture", "incorrect angle"]
     },
     repsCompleted: Number,
-    setsCompleted: Number
+    setsCompleted: Number,
+    bestStretchDist: Number
   },
   // Google Fit specific data
   googleFitData: {
