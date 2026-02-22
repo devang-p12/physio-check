@@ -126,7 +126,7 @@ export const startSession = async (req, res) => {
  */
 export const completeSession = async (req, res) => {
   const patientId = req.user.id;
-  const { sessionId, googleFitAccessToken, reps, formScore } = req.body;
+  const { sessionId, googleFitAccessToken, reps, formScore, bestStretchDist } = req.body;
 
   try {
     const session = await findSessionById(sessionId);
@@ -175,6 +175,7 @@ export const completeSession = async (req, res) => {
     const analytics = {
       ...baseAnalytics,
       repsCompleted: reps !== undefined ? Number(reps) : baseAnalytics.repsCompleted,
+      bestStretchDist: bestStretchDist !== undefined ? Number(bestStretchDist) : baseAnalytics.bestStretchDist,
       formQuality: {
         ...(baseAnalytics.formQuality || {}),
         score: formScore !== undefined ? Number(formScore) : baseAnalytics.formQuality?.score

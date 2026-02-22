@@ -91,8 +91,12 @@ class LiveMatcher {
   currentTargetIndex = 0;
   private isCooldown = false;
   private readonly cooldownMs = 1500;
-  private readonly repThreshold = 60;
+  public repThreshold = 60;
   private buffer: NormFrame[] = [];
+
+  // Adaptive difficulty
+  private lastTargetTime = Date.now();
+  private readonly struggleTimeMs = 8000;
 
   constructor(frames: NormFrame[]) {
     this.template = frames;
@@ -110,14 +114,34 @@ class LiveMatcher {
   }
 
   processFrame(frame: NormFrame | null): LiveMatchResult {
-    if (!frame) return { similarity: 0, repCount: this.repCount, status: "Detecting body..." };
+    const now = Date.now();
+    if (!frame) {
+      this.lastTargetTime = now; // Pause struggle timer if no body detected
+      return { similarity: 0, repCount: this.repCount, status: "Detecting body..." };
+    }
+
+    // landmark visibility check - ensure person is "in frame" before helping
+    // checking average visibility of first 20 landmarks (face/torso)
+    const avgVis = frame.slice(0, 25).reduce((acc, lm) => acc + (lm.visibility ?? 0), 0) / 25;
+    const isVisible = avgVis > 0.5;
+
     this.buffer.push(frame);
     if (this.buffer.length > 5) this.buffer.shift();
     const smoothed = this.smooth(frame);
 
     if (this.isCooldown || this.template.length === 0) {
+      this.lastTargetTime = now;
       if (this.isCooldown) return { similarity: 0, repCount: this.repCount, status: "Rep logged — return to start" };
       return { similarity: 0, repCount: this.repCount, status: "Preparing..." };
+    }
+
+    // Adapt threshold if struggling AND visible
+    if (isVisible && now - this.lastTargetTime > this.struggleTimeMs) {
+      if (this.repThreshold > 30) {
+        this.repThreshold -= 15;
+        console.log(`[LiveMatcher] Patient struggling. Lowering threshold to ${this.repThreshold}%`);
+      }
+      this.lastTargetTime = now; // reset timer to reduce again if needed
     }
 
     const targetFrame = this.template[this.currentTargetIndex];
@@ -126,23 +150,30 @@ class LiveMatcher {
       const s = DTW.similarity(DTW.frameDistance(bf, targetFrame));
       if (s > sim) sim = s;
     }
-    const dist = DTW.frameDistance(smoothed, targetFrame);
-    console.log(`[LiveMatcher] Pos ${this.currentTargetIndex + 1}/${this.template.length} | dist=${dist.toFixed(3)} bestSim=${sim.toFixed(0)}% | reps=${this.repCount}`);
 
     let status = `Match Position ${this.currentTargetIndex + 1} of ${this.template.length}`;
     if (sim >= this.repThreshold) {
       this.currentTargetIndex++;
+      this.lastTargetTime = now; // Reset struggle timer
       if (this.currentTargetIndex >= this.template.length) {
         this.repCount++;
         this.currentTargetIndex = 0;
+        // User requested NOT TO RESET the threshold. Keep the last successful help level.
+        // this.repThreshold = 60; 
         this.triggerCooldown();
         status = "✓ Rep Logged!";
       } else {
-        status = "✓ Hit! Move to next position.";
+        status = `✓ Hit! Move to next position.`;
       }
-    } else if (sim > 50) {
+    } else if (sim > this.repThreshold - 10) {
       status = "Getting closer...";
     }
+
+    if (!isVisible) status = "⚠ Please move into frame";
+    else if (this.repThreshold < 60) {
+      status += ` (Auto-Assist: ${this.repThreshold}%)`;
+    }
+
     return { similarity: sim, repCount: this.repCount, status };
   }
 
@@ -154,6 +185,8 @@ class LiveMatcher {
   reset() {
     this.repCount = 0; this.currentTargetIndex = 0; this.isCooldown = false;
     this.buffer = [];
+    this.repThreshold = 60;
+    this.lastTargetTime = Date.now();
   }
 }
 
@@ -225,6 +258,8 @@ interface SessionSummary {
   formScore: number;
   holdSecs?: number;
   bestStretchDist?: number;
+  helpThreshold?: number;
+  painDetected?: boolean;
 }
 
 interface ChatMessage {
@@ -247,7 +282,8 @@ function buildSystemPrompt(summary: SessionSummary, patient: any): string {
 - Name: ${patient.name ?? "Patient"}
 - Age: ${patient.age ?? "Unknown"}
 - Condition/Diagnosis: ${patient.condition ?? patient.diagnosis ?? "Not specified"}
-- Physiotherapist Notes: ${patient.notes ?? "None"}`
+- Physiotherapist Notes: ${patient.notes ?? "None"}
+- Pain/Strain Reported: ${summary.painDetected ? "YES (Patient showed signs of strain)" : "No reported pain"}`
     : "Patient details unavailable.";
 
   const sessionInfo = summary.exerciseMode === "stretch"
@@ -260,7 +296,8 @@ function buildSystemPrompt(summary: SessionSummary, patient: any): string {
 - Exercise: ${summary.exerciseName} (Workout)
 - Reps Completed: ${summary.reps} / ${summary.targetReps}
 - Form Score: ${summary.formScore}%
-- Completion Rate: ${Math.round((summary.reps / Math.max(summary.targetReps, 1)) * 100)}%`;
+- Completion Rate: ${Math.round((summary.reps / Math.max(summary.targetReps, 1)) * 100)}%
+${summary.helpThreshold && summary.helpThreshold < 60 ? `- Note: System provided assistance (Threshold lowered to ${summary.helpThreshold}%)` : ""}`;
 
   return `You are PhysioBot, a compassionate and knowledgeable physiotherapy assistant embedded in PhysioCheck, a rehabilitation platform.
 
@@ -276,6 +313,7 @@ Your role:
 5. Always remind them to consult their physiotherapist for clinical decisions.
 6. Keep responses concise, warm, and encouraging — never more than 150 words per message unless more detail is explicitly requested.
 7. Use plain language; avoid excessive medical jargon.
+8. **Session Context Awareness**: If the user mentions feeling pain, discomfort, or excessive fatigue, immediately adjust your tone to be extremely cautious, empathetic, and prioritize their safety. Advise them to stop or consult their doctor if necessary. Remember this context for the rest of the conversation.
 
 Start by giving a personalised post-session recap and encouragement.`;
 }
@@ -284,16 +322,15 @@ interface PostSessionChatbotProps {
   isOpen: boolean;
   onClose: () => void;
   sessionSummary: SessionSummary;
-  assignmentId: string;
 }
 
 const PostSessionChatbot: React.FC<PostSessionChatbotProps> = ({
-  isOpen, onClose, sessionSummary, assignmentId,
+  isOpen, onClose, sessionSummary,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [patient, setPatient] = useState<any>(null);
+  // patient state removed as fetchedPatient is used in prompt
   const [quickRepliesVisible, setQuickRepliesVisible] = useState(false);
   const [systemPrompt, setSystemPrompt] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -320,7 +357,6 @@ const PostSessionChatbot: React.FC<PostSessionChatbotProps> = ({
         if (res.ok) {
           const data = await res.json();
           fetchedPatient = data.patient ?? data.user ?? data;
-          setPatient(fetchedPatient);
         }
       } catch (e) {
         console.warn("Could not fetch patient profile:", e);
@@ -599,12 +635,9 @@ const PatientCustomExercise: React.FC = () => {
   const [status, setStatus] = useState("Press Start to begin");
   const [repCount, setRepCount] = useState(0);
 
-  // Stretch phase 2 state
+  // Stretch tracking state
   const [stretchDist, setStretchDist] = useState(0);
   const [bestStretchDist, setBestStretchDist] = useState<number | null>(null);
-  const [holdSecs, setHoldSecs] = useState(0);
-  const holdTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const isPhase2Ref = useRef(false);
 
   // Posture state
   const [postureStatus, setPostureStatus] = useState<"correct" | "incorrect">("correct");
@@ -616,6 +649,9 @@ const PatientCustomExercise: React.FC = () => {
   // Form Score Tracking
   const similaritySumRef = useRef(0);
   const similarityCountRef = useRef(0);
+  const lastPlayedRepRef = useRef(0);
+  const [painDetected, setPainDetected] = useState(false);
+  const painReportedRef = useRef(false);
 
   // ── Chatbot state ─────────────────────────────────────────────────────────
   const [chatbotOpen, setChatbotOpen] = useState(false);
@@ -629,7 +665,23 @@ const PatientCustomExercise: React.FC = () => {
   const stopRef = useRef(false);
   const matcherRef = useRef<LiveMatcher | null>(null);
   const templateFramesRef = useRef<any[][]>([]);
-  const dingAudioRef = useRef(new Audio("/ding.mp3"));
+  // Synthetic beep to replace missing /ding.mp3
+  const playBeep = useCallback(() => {
+    try {
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(800, ctx.currentTime);
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.1);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.1);
+    } catch (e) { console.error("Audio API error", e); }
+  }, []);
   const refVideoRef = useRef<HTMLVideoElement>(null);
   const [currentTargetIdx, setCurrentTargetIdx] = useState(0);
 
@@ -718,7 +770,7 @@ const PatientCustomExercise: React.FC = () => {
     if (!videoRef.current || !canvasRef.current || !templateRef.current) return;
     const canvas = canvasRef.current;
     let ctx = canvas.getContext("2d")!;
-    const dingAudio = dingAudioRef.current;
+    // Replaced dingAudio with playBeep
 
     const isStretch = templateRef.current.exerciseMode === "stretch";
     const isPalm = templateRef.current.exerciseType === "palm" || templateRef.current.name.toLowerCase().includes("palm");
@@ -730,8 +782,7 @@ const PatientCustomExercise: React.FC = () => {
     let latestPoseLms: any[] | null = null;
     let latestHandLms: any[] | null = null;
 
-    const processPhase2 = () => {
-      if (!isPhase2Ref.current) return;
+    const processStretch = () => {
       const sc = templateRef.current?.stretchConfig;
       if (!sc) return;
       const sourceLms = isPalm ? latestHandLms : latestPoseLms;
@@ -744,8 +795,6 @@ const PatientCustomExercise: React.FC = () => {
             ? (prev === null ? dist : Math.min(prev, dist))
             : (prev === null ? dist : Math.max(prev, dist))
         );
-        const progress = sc.direction === "inward" ? Math.max(0, 1 - dist / 0.4) : Math.min(1, dist / 0.4);
-        setStatus(`Stretch ${Math.round(progress * 100)}% — ${sc.direction === "inward" ? "bring closer" : "spread apart"}`);
         [sc.lm1, sc.lm2].forEach(idx => {
           const lm = sourceLms[idx];
           if (!lm) return;
@@ -775,13 +824,15 @@ const PatientCustomExercise: React.FC = () => {
           setStatus(res.status);
           setCurrentTargetIdx(matcherRef.current.currentTargetIndex);
 
-          if (templateRef.current?.exerciseMode === "stretch" && res.repCount > 0 && !isPhase2Ref.current) {
-            isPhase2Ref.current = true; setHoldSecs(0);
-            holdTimerRef.current = setInterval(() => setHoldSecs(s => s + 1), 1000);
-            setStatus("Keyframe matched! Now hold the stretch.");
-          } else if (res.repCount > repCount) {
+          if (res.repCount > lastPlayedRepRef.current) {
+            lastPlayedRepRef.current = res.repCount;
             setRepCount(res.repCount);
-            dingAudio.currentTime = 0; dingAudio.play().catch(() => { });
+            if (matcherRef.current && matcherRef.current.repThreshold < 60) {
+              // Read aloud that we're helping if threshold dropped
+              const msg = new SpeechSynthesisUtterance("Good job!");
+              window.speechSynthesis.speak(msg);
+            }
+            playBeep();
           }
 
           const col = res.similarity >= 75 ? "#10b981" : res.similarity >= 45 ? "#f59e0b" : "#94a3b8";
@@ -796,7 +847,7 @@ const PatientCustomExercise: React.FC = () => {
         setPostureStatus(posture.status);
         setFormCue(posture.cue);
       }
-      processPhase2();
+      processStretch();
     };
 
     if (runPose) {
@@ -822,7 +873,7 @@ const PatientCustomExercise: React.FC = () => {
           }
           if (!runPose || isPalm) {
             const norm = HandNormalizer.normalize(r.multiHandLandmarks[0]);
-            if (norm && matcherRef.current && !isPhase2Ref.current) {
+            if (norm && matcherRef.current) {
               const res = matcherRef.current.processFrame(norm);
               if (res.similarity > 0) {
                 similaritySumRef.current += res.similarity;
@@ -830,15 +881,19 @@ const PatientCustomExercise: React.FC = () => {
               }
               setSimilarity(res.similarity); setStatus(res.status);
               setCurrentTargetIdx(matcherRef.current.currentTargetIndex);
-              if (res.repCount > repCount) { setRepCount(res.repCount); dingAudio.currentTime = 0; dingAudio.play().catch(() => { }); }
-            } else if (!norm && matcherRef.current && !isPhase2Ref.current) {
+              if (res.repCount > lastPlayedRepRef.current) {
+                lastPlayedRepRef.current = res.repCount;
+                setRepCount(res.repCount);
+                playBeep();
+              }
+            } else if (!norm && matcherRef.current) {
               setStatus(matcherRef.current.processFrame(null).status);
             }
           }
-        } else if (!runPose && matcherRef.current && !isPhase2Ref.current) {
+        } else if (!runPose && matcherRef.current) {
           setStatus(matcherRef.current.processFrame(null).status);
         }
-        processPhase2();
+        processStretch();
       });
       await hands.initialize();
     }
@@ -876,7 +931,11 @@ const PatientCustomExercise: React.FC = () => {
                 setStrainEmotion(dominantEmotion);
                 const { angry, sad, fearful } = detection.expressions as any;
                 const strainScore = (angry ?? 0) + (sad ?? 0) + (fearful ?? 0);
-                if (strainScore > 0.8 && matchSimilarityRef.current < 50) { triggerAudioWarning(); }
+                if (strainScore > 0.8) {
+                  painReportedRef.current = true;
+                  setPainDetected(true);
+                  if (matchSimilarityRef.current < 50) { triggerAudioWarning(); }
+                }
               }
             } catch (err) { console.warn("Emotion detection error", err); }
           }
@@ -904,8 +963,11 @@ const PatientCustomExercise: React.FC = () => {
       similaritySumRef.current = 0;
       similarityCountRef.current = 0;
       matcherRef.current = new LiveMatcher(templateFramesRef.current);
-      setRepCount(0); isPhase2Ref.current = false;
-      setBestStretchDist(null); setHoldSecs(0); setStretchDist(0);
+      setRepCount(0);
+      lastPlayedRepRef.current = 0;
+      setPainDetected(false);
+      painReportedRef.current = false;
+      setBestStretchDist(null); setStretchDist(0);
       setSimilarity(0);
       setStrainEmotion(null);
       setPostureStatus("correct");
@@ -923,7 +985,6 @@ const PatientCustomExercise: React.FC = () => {
     const token = localStorage.getItem("token");
     stopRef.current = true;
     if (animRef.current) { cancelAnimationFrame(animRef.current); animRef.current = null; }
-    if (holdTimerRef.current) { clearInterval(holdTimerRef.current); holdTimerRef.current = null; }
     streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     poseRef.current?.close(); poseRef.current = null;
@@ -959,8 +1020,9 @@ const PatientCustomExercise: React.FC = () => {
       reps: repCount,
       targetReps,
       formScore: averageSimilarity,
-      holdSecs: isStretch ? holdSecs : undefined,
       bestStretchDist: isStretch ? (bestStretchDist ?? undefined) : undefined,
+      helpThreshold: matcherRef.current?.repThreshold,
+      painDetected: painReportedRef.current
     });
 
     // Open PhysioBot chatbot
@@ -1042,14 +1104,23 @@ const PatientCustomExercise: React.FC = () => {
           )}
 
           {/* Emotion badge */}
-          {isActive && strainEmotion && (
-            <div className={`absolute top-4 right-4 z-20 flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold backdrop-blur-sm border transition-all ${isStrainEmotion
-              ? "bg-red-500/20 border-red-500/40 text-red-300"
-              : "bg-slate-800/80 border-slate-700 text-slate-300"
-              }`}>
-              <span className="text-lg leading-none">{EMOTION_EMOJI[strainEmotion] ?? "😐"}</span>
-              <span className="capitalize">{strainEmotion}</span>
-              {isStrainEmotion && <span className="text-[10px] uppercase tracking-widest text-red-400 font-bold">Strain</span>}
+          {isActive && (strainEmotion || painDetected) && (
+            <div className={`absolute top-4 right-4 z-20 flex flex-col gap-2 items-end`}>
+              {strainEmotion && (
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold backdrop-blur-sm border transition-all ${isStrainEmotion
+                  ? "bg-red-500/20 border-red-500/40 text-red-300"
+                  : "bg-slate-800/80 border-slate-700 text-slate-300"
+                  }`}>
+                  <span className="text-lg leading-none">{EMOTION_EMOJI[strainEmotion] ?? "😐"}</span>
+                  <span className="capitalize">{strainEmotion}</span>
+                  {isStrainEmotion && <span className="text-[10px] uppercase tracking-widest text-red-400 font-bold ml-1">Strain</span>}
+                </div>
+              )}
+              {painDetected && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/30 border border-red-500/50 text-red-200 text-[10px] font-bold uppercase tracking-tighter">
+                  <AlertCircle size={12} /> Strain Logged
+                </div>
+              )}
             </div>
           )}
 
@@ -1135,18 +1206,20 @@ const PatientCustomExercise: React.FC = () => {
             {template?.exerciseMode === "stretch" ? (
               <>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-slate-400 text-sm"><Expand size={16} /><span>Best Stretch</span></div>
-                  <span className={`font-black text-xl ${bestStretchDist !== null ? "text-violet-400" : "text-slate-500"}`}>
-                    {bestStretchDist !== null ? `${(bestStretchDist * 100).toFixed(0)}%` : "--"}
+                  <div className="flex items-center gap-2 text-slate-400 text-sm"><Repeat2 size={16} /><span>Reps Done</span></div>
+                  <span className="text-white font-black text-xl">
+                    {repCount}<span className="text-slate-500 font-normal text-sm"> / {targetReps}</span>
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-slate-400 text-sm"><Activity size={16} /><span>Hold Time</span></div>
-                  <span className="font-black text-xl text-teal-400">{holdSecs}s</span>
+                  <div className="flex items-center gap-2 text-slate-400 text-sm"><Expand size={16} /><span>Best Stretch</span></div>
+                  <span className={`font-black text-xl ${bestStretchDist !== null ? "text-violet-400" : "text-slate-500"}`}>
+                    {bestStretchDist !== null ? bestStretchDist.toFixed(2) : "--"}
+                  </span>
                 </div>
                 <div className="w-full bg-slate-700 rounded-full h-2">
                   <div className="h-2 rounded-full transition-all duration-300 bg-gradient-to-r from-violet-500 to-fuchsia-400"
-                    style={{ width: `${Math.min(100, Math.max(0, stretchDist * 100))}%` }} />
+                    style={{ width: `${Math.min(100, Math.max(0, stretchDist * 200))}%` }} />
                 </div>
               </>
             ) : (
@@ -1245,7 +1318,6 @@ const PatientCustomExercise: React.FC = () => {
           isOpen={chatbotOpen}
           onClose={handleChatbotClose}
           sessionSummary={lastSessionSummary}
-          assignmentId={assignmentId ?? ""}
         />
       )}
     </>

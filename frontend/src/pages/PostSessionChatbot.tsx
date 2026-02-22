@@ -7,7 +7,6 @@ import {
   Loader2,
   Activity,
   TrendingUp,
-  Heart,
   ChevronRight,
   Sparkles,
 } from "lucide-react";
@@ -20,7 +19,6 @@ interface SessionSummary {
   reps: number;
   targetReps: number;
   formScore: number;
-  holdSecs?: number;
   bestStretchDist?: number;
 }
 
@@ -62,9 +60,9 @@ function buildSystemPrompt(summary: SessionSummary, patient: any): string {
     summary.exerciseMode === "stretch"
       ? `Exercise Session Summary:
 - Exercise: ${summary.exerciseName} (Stretch)
-- Best Stretch Range: ${summary.bestStretchDist != null ? Math.round(summary.bestStretchDist * 100) + "%" : "N/A"}
-- Hold Duration: ${summary.holdSecs ?? 0}s
-- Form Score: ${summary.formScore}%`
+- Reps Completed: ${summary.reps} / ${summary.targetReps}
+- Form Score: ${summary.formScore}%
+- Best Stretch Range: ${summary.bestStretchDist != null ? summary.bestStretchDist.toFixed(2) : "N/A"}`
       : `Exercise Session Summary:
 - Exercise: ${summary.exerciseName} (Workout)
 - Reps Completed: ${summary.reps} / ${summary.targetReps}
@@ -191,7 +189,7 @@ const PostSessionChatbot: React.FC<PostSessionChatbotProps> = ({
         // Friendly fallback if Gemini fails on init
         const fallback =
           sessionSummary.exerciseMode === "stretch"
-            ? `Great work on your ${sessionSummary.exerciseName} stretch! You held for ${sessionSummary.holdSecs ?? 0}s with a ${sessionSummary.formScore}% form score. Feel free to ask me anything about your recovery!`
+            ? `Great work on your ${sessionSummary.exerciseName} stretch! You completed ${sessionSummary.reps} reps with a ${sessionSummary.formScore}% form score. Feel free to ask me anything about your recovery!`
             : `Great work completing your ${sessionSummary.exerciseName} session! You completed ${sessionSummary.reps} reps with a ${sessionSummary.formScore}% form score. Feel free to ask me any questions about your recovery!`;
         setMessages([{ role: "assistant", content: fallback, timestamp: new Date() }]);
       }
@@ -282,10 +280,10 @@ const PostSessionChatbot: React.FC<PostSessionChatbotProps> = ({
     sessionSummary.formScore >= 80
       ? { label: "Excellent", color: "text-emerald-400", bg: "bg-emerald-500/15 border-emerald-500/30" }
       : sessionSummary.formScore >= 60
-      ? { label: "Good", color: "text-teal-400", bg: "bg-teal-500/15 border-teal-500/30" }
-      : sessionSummary.formScore >= 40
-      ? { label: "Fair", color: "text-yellow-400", bg: "bg-yellow-500/15 border-yellow-500/30" }
-      : { label: "Keep Trying", color: "text-slate-400", bg: "bg-slate-700/50 border-slate-600" };
+        ? { label: "Good", color: "text-teal-400", bg: "bg-teal-500/15 border-teal-500/30" }
+        : sessionSummary.formScore >= 40
+          ? { label: "Fair", color: "text-yellow-400", bg: "bg-yellow-500/15 border-yellow-500/30" }
+          : { label: "Keep Trying", color: "text-slate-400", bg: "bg-slate-700/50 border-slate-600" };
 
   if (!isOpen) return null;
 
@@ -341,9 +339,8 @@ const PostSessionChatbot: React.FC<PostSessionChatbotProps> = ({
                       {sessionSummary.reps}/{sessionSummary.targetReps} reps
                     </span>
                     <span
-                      className={`text-[10px] font-bold ${
-                        completionPct >= 100 ? "text-emerald-400" : "text-slate-400"
-                      }`}
+                      className={`text-[10px] font-bold ${completionPct >= 100 ? "text-emerald-400" : "text-slate-400"
+                        }`}
                     >
                       ({completionPct}%)
                     </span>
@@ -358,9 +355,9 @@ const PostSessionChatbot: React.FC<PostSessionChatbotProps> = ({
               ) : (
                 <>
                   <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-500/15 border border-violet-500/30">
-                    <Heart size={13} className="text-violet-400" />
+                    <TrendingUp size={13} className="text-violet-400" />
                     <span className="text-violet-300 text-xs font-semibold">
-                      Hold: {sessionSummary.holdSecs ?? 0}s
+                      {sessionSummary.reps}/{sessionSummary.targetReps} reps
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-fuchsia-500/15 border border-fuchsia-500/30">
@@ -368,7 +365,7 @@ const PostSessionChatbot: React.FC<PostSessionChatbotProps> = ({
                     <span className="text-fuchsia-300 text-xs font-semibold">
                       Range:{" "}
                       {sessionSummary.bestStretchDist != null
-                        ? Math.round(sessionSummary.bestStretchDist * 100) + "%"
+                        ? sessionSummary.bestStretchDist.toFixed(2)
                         : "N/A"}
                     </span>
                   </div>
@@ -385,11 +382,10 @@ const PostSessionChatbot: React.FC<PostSessionChatbotProps> = ({
                 className={`flex items-start gap-3 ${msg.role === "user" ? "flex-row-reverse" : ""}`}
               >
                 <div
-                  className={`shrink-0 w-7 h-7 rounded-xl flex items-center justify-center ${
-                    msg.role === "assistant"
-                      ? "bg-gradient-to-br from-teal-500 to-emerald-600 shadow-md shadow-teal-500/30"
-                      : "bg-slate-600"
-                  }`}
+                  className={`shrink-0 w-7 h-7 rounded-xl flex items-center justify-center ${msg.role === "assistant"
+                    ? "bg-gradient-to-br from-teal-500 to-emerald-600 shadow-md shadow-teal-500/30"
+                    : "bg-slate-600"
+                    }`}
                 >
                   {msg.role === "assistant" ? (
                     <Bot size={14} className="text-white" />
@@ -398,11 +394,10 @@ const PostSessionChatbot: React.FC<PostSessionChatbotProps> = ({
                   )}
                 </div>
                 <div
-                  className={`max-w-[82%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
-                    msg.role === "assistant"
-                      ? "bg-slate-700/60 border border-slate-600/50 text-slate-100 rounded-tl-sm"
-                      : "bg-teal-500 text-white rounded-tr-sm shadow-md shadow-teal-500/20"
-                  }`}
+                  className={`max-w-[82%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${msg.role === "assistant"
+                    ? "bg-slate-700/60 border border-slate-600/50 text-slate-100 rounded-tl-sm"
+                    : "bg-teal-500 text-white rounded-tr-sm shadow-md shadow-teal-500/20"
+                    }`}
                 >
                   {msg.content}
                 </div>
