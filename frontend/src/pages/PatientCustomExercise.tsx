@@ -96,7 +96,7 @@ class LiveMatcher {
 
   // Adaptive difficulty
   private lastTargetTime = Date.now();
-  private readonly struggleTimeMs = 8000;
+  private readonly struggleTimeMs = 5000; // Reduced to 5s for better responsiveness
 
   constructor(frames: NormFrame[]) {
     this.template = frames;
@@ -121,9 +121,8 @@ class LiveMatcher {
     }
 
     // landmark visibility check - ensure person is "in frame" before helping
-    // checking average visibility of first 20 landmarks (face/torso)
-    const avgVis = frame.slice(0, 25).reduce((acc, lm) => acc + (lm.visibility ?? 0), 0) / 25;
-    const isVisible = avgVis > 0.5;
+    const avgVis = frame.reduce((acc, lm) => acc + (lm.visibility ?? 0), 0) / frame.length;
+    const isVisible = avgVis > 0.4; // Slightly more lenient threshold
 
     this.buffer.push(frame);
     if (this.buffer.length > 5) this.buffer.shift();
@@ -139,7 +138,7 @@ class LiveMatcher {
     if (isVisible && now - this.lastTargetTime > this.struggleTimeMs) {
       if (this.repThreshold > 30) {
         this.repThreshold -= 15;
-        console.log(`[LiveMatcher] Patient struggling. Lowering threshold to ${this.repThreshold}%`);
+        console.log(`[LiveMatcher] Threshold lowered to ${this.repThreshold}% due to struggle`);
       }
       this.lastTargetTime = now; // reset timer to reduce again if needed
     }
