@@ -87,6 +87,7 @@ interface LiveMatchResult { similarity: number; repCount: number; status: string
 
 class LiveMatcher {
   private template: NormFrame[];
+  public exerciseMode: "workout" | "stretch";
   repCount = 0;
   currentTargetIndex = 0;
   private isCooldown = false;
@@ -98,8 +99,12 @@ class LiveMatcher {
   private lastTargetTime = Date.now();
   private readonly struggleTimeMs = 5000; // Reduced to 5s for better responsiveness
 
-  constructor(frames: NormFrame[]) {
+  private stretchConfig?: StretchConfig;
+
+  constructor(frames: NormFrame[], mode: "workout" | "stretch" = "workout", stretchConfig?: StretchConfig) {
     this.template = frames;
+    this.exerciseMode = mode;
+    this.stretchConfig = stretchConfig;
   }
 
   private smooth(frame: NormFrame): NormFrame {
@@ -150,22 +155,31 @@ class LiveMatcher {
       if (s > sim) sim = s;
     }
 
-    let status = `Match Position ${this.currentTargetIndex + 1} of ${this.template.length}`;
+    let status = "";
+    if (this.exerciseMode === "workout") {
+      status = `Match Position ${this.currentTargetIndex + 1} of ${this.template.length}`;
+    } else {
+      const dir = this.stretchConfig?.direction?.toUpperCase() || "OKAY";
+      status = sim >= this.repThreshold ? `POSITION OKAY - STRETCH ${dir}` : "POSITION NOT OKAY";
+    }
+
     if (sim >= this.repThreshold) {
-      this.currentTargetIndex++;
+      if (this.exerciseMode === "workout") {
+        this.currentTargetIndex++;
+      }
       this.lastTargetTime = now; // Reset struggle timer
-      if (this.currentTargetIndex >= this.template.length) {
+
+      // Sequence completion for workout mode
+      if (this.exerciseMode === "workout" && this.currentTargetIndex >= this.template.length) {
         this.repCount++;
         this.currentTargetIndex = 0;
-        // User requested NOT TO RESET the threshold. Keep the last successful help level.
-        // this.repThreshold = 60; 
         this.triggerCooldown();
         status = "✓ Rep Logged!";
-      } else {
+      } else if (this.exerciseMode === "workout") {
         status = `✓ Hit! Move to next position.`;
       }
     } else if (sim > this.repThreshold - 10) {
-      status = "Getting closer...";
+      status = this.exerciseMode === "workout" ? "Getting closer..." : status;
     }
 
     if (!isVisible) status = "⚠ Please move into frame";
@@ -731,7 +745,11 @@ const PatientCustomExercise: React.FC = () => {
           f.map(([x, y, z, v]) => ({ x, y, z, visibility: v ?? 1 }))
         );
         templateFramesRef.current = normFrames;
-        matcherRef.current = new LiveMatcher(normFrames);
+        matcherRef.current = new LiveMatcher(
+          normFrames,
+          tmplData.template.exerciseMode || "workout",
+          tmplData.template.stretchConfig
+        );
       } catch (e: any) {
         setError(e.message ?? "Unknown error");
       } finally {
@@ -961,7 +979,11 @@ const PatientCustomExercise: React.FC = () => {
 
       similaritySumRef.current = 0;
       similarityCountRef.current = 0;
-      matcherRef.current = new LiveMatcher(templateFramesRef.current);
+      matcherRef.current = new LiveMatcher(
+        templateFramesRef.current,
+        template?.exerciseMode || "workout",
+        template?.stretchConfig
+      );
       setRepCount(0);
       lastPlayedRepRef.current = 0;
       setPainDetected(false);
@@ -1205,12 +1227,6 @@ const PatientCustomExercise: React.FC = () => {
             {template?.exerciseMode === "stretch" ? (
               <>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-slate-400 text-sm"><Repeat2 size={16} /><span>Reps Done</span></div>
-                  <span className="text-white font-black text-xl">
-                    {repCount}<span className="text-slate-500 font-normal text-sm"> / {targetReps}</span>
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-slate-400 text-sm"><Expand size={16} /><span>Best Stretch</span></div>
                   <span className={`font-black text-xl ${bestStretchDist !== null ? "text-violet-400" : "text-slate-500"}`}>
                     {bestStretchDist !== null ? bestStretchDist.toFixed(2) : "--"}
@@ -1249,9 +1265,11 @@ const PatientCustomExercise: React.FC = () => {
                 ? <CheckCircle2 size={20} className="text-teal-400 shrink-0" />
                 : <AlertCircle size={20} className="text-red-400 shrink-0" />}
               <div>
-                <p className="text-xs uppercase tracking-wide font-bold mb-0.5 text-slate-400">Form</p>
+                <p className="text-xs uppercase tracking-wide font-bold mb-0.5 text-slate-400">
+                  {template?.exerciseMode === "stretch" ? "Stretch Status" : "Pose Match"}
+                </p>
                 <p className={`text-sm font-semibold ${postureStatus === "correct" ? "text-teal-300" : "text-red-300"}`}>
-                  {postureStatus === "correct" ? "Posture Correct" : (formCue ?? "Check your form")}
+                  {postureStatus === "correct" ? (template?.exerciseMode === "stretch" ? "POSITION OKAY" : "Posture Correct") : (formCue ?? "Check your form")}
                 </p>
               </div>
             </div>
