@@ -48,45 +48,33 @@ const QUICK_REPLIES = [
 // ─── System prompt builder ────────────────────────────────────────────────────
 
 function buildSystemPrompt(summary: SessionSummary, patient: any): string {
-  const patientInfo = patient
-    ? `Patient Details:
-- Name: ${patient.name ?? "Patient"}
-- Age: ${patient.age ?? "Unknown"}
-- Condition/Diagnosis: ${patient.condition ?? patient.diagnosis ?? "Not specified"}
-- Physiotherapist Notes: ${patient.notes ?? "None"}`
-    : "Patient details unavailable.";
+  // Extract data safely from your MongoDB object
+  const pName = patient?.name || "the patient";
+  const pCondition = patient?.condition || "general rehabilitation";
+  const pNotes = patient?.notes || "No specific therapist notes provided.";
 
-  const sessionInfo =
-    summary.exerciseMode === "stretch"
-      ? `Exercise Session Summary:
-- Exercise: ${summary.exerciseName} (Stretch)
-- Reps Completed: ${summary.reps} / ${summary.targetReps}
-- Form Score: ${summary.formScore}%
-- Best Stretch Range: ${summary.bestStretchDist != null ? summary.bestStretchDist.toFixed(2) : "N/A"}`
-      : `Exercise Session Summary:
-- Exercise: ${summary.exerciseName} (Workout)
-- Reps Completed: ${summary.reps} / ${summary.targetReps}
-- Form Score: ${summary.formScore}%
-- Completion Rate: ${Math.round((summary.reps / Math.max(summary.targetReps, 1)) * 100)}%`;
+  return `You are PhysioBot, a clinical assistant for PhysioCheck. 
+  
+PATIENT CONTEXT (from DB):
+- Name: ${pName}
+- Diagnosis: ${pCondition}
+- Therapist Notes: ${pNotes}
 
-  return `You are PhysioBot, a compassionate and knowledgeable physiotherapy assistant embedded in PhysioCheck, a rehabilitation platform.
+SESSION PERFORMANCE:
+- Exercise: ${summary.exerciseName}
+- Score: ${summary.formScore}% 
+- Reps: ${summary.reps}/${summary.targetReps}
 
-${patientInfo}
+TASK:
+Generate a concise "Session Clinical Report". 
+Use this exact structure:
+1. **Summary**: A professional assessment of today's performance.
+2. **Clinical Correlation**: How this specific exercise helps their ${pCondition}.
+3. **Recommendation**: One technical adjustment or recovery tip.
+4. **Safety**: A brief reminder to monitor for specific pain related to their condition.
 
-${sessionInfo}
-
-Your role:
-1. Greet the patient warmly by name and acknowledge their session performance with specific, data-driven feedback.
-2. Celebrate wins (good form score, reps completed) and gently flag areas for improvement without discouraging them.
-3. Provide actionable physiotherapy advice tailored to their condition and exercise.
-4. Answer follow-up questions about their recovery, progression, and exercise technique.
-5. Always remind them to consult their physiotherapist for clinical decisions.
-6. Keep responses concise, warm, and encouraging — never more than 150 words per message unless more detail is explicitly requested.
-7. Use plain language; avoid excessive medical jargon.
-
-Start by giving a personalised post-session recap and encouragement.`;
+Tone: Professional, clinical, yet encouraging. Max 120 words.`;
 }
-
 // ─── Gemini API call — proxied through backend ────────────────────────────────
 
 async function callGemini(
@@ -158,45 +146,53 @@ const PostSessionChatbot: React.FC<PostSessionChatbotProps> = ({
     hasInitialized.current = true;
 
     const init = async () => {
-      setIsLoading(true);
-      const token = localStorage.getItem("token");
+  setIsLoading(true);
+  const token = localStorage.getItem("token");
 
-      // 1. Fetch patient profile
-      let fetchedPatient = null;
-      try {
-        const res = await fetch("http://localhost:5000/patient/profile", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          fetchedPatient = data.patient ?? data.user ?? data;
-          setPatient(fetchedPatient);
-        }
-      } catch (e) {
-        console.warn("Could not fetch patient profile:", e);
-      }
+  try {
+    // 1. Fetch patient profile (MongoDB)
+    const res = await fetch("http://localhost:5000/patient/profile", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    
+    let fetchedPatient = null;
+    if (res.ok) {
+      const data = await res.json();
+      // Adjust this line based on your actual API response structure
+      fetchedPatient = data.patient || data.user || data;
+      setPatient(fetchedPatient);
+    }
 
-      // 2. Build system prompt
-      const prompt = buildSystemPrompt(sessionSummary, fetchedPatient);
-      setSystemPrompt(prompt);
+    // 2. Build the system prompt with the data we just got
+    const prompt = buildSystemPrompt(sessionSummary, fetchedPatient);
+    setSystemPrompt(prompt);
 
-      // 3. Opening Gemini message
-      lastRequestTime.current = Date.now();
-      try {
-        const openingMsg = await callGemini(prompt, [], "Hello! Please give me my post-session recap.");
-        setMessages([{ role: "assistant", content: openingMsg, timestamp: new Date() }]);
-      } catch {
-        // Friendly fallback if Gemini fails on init
-        const fallback =
-          sessionSummary.exerciseMode === "stretch"
-            ? `Great work on your ${sessionSummary.exerciseName} stretch! You completed ${sessionSummary.reps} reps with a ${sessionSummary.formScore}% form score. Feel free to ask me anything about your recovery!`
-            : `Great work completing your ${sessionSummary.exerciseName} session! You completed ${sessionSummary.reps} reps with a ${sessionSummary.formScore}% form score. Feel free to ask me any questions about your recovery!`;
-        setMessages([{ role: "assistant", content: fallback, timestamp: new Date() }]);
-      }
+    // 3. Immediately trigger the Report generation
+    // We pass the "Generate report" command as the first user message
+    const reportMsg = await callGemini(
+      prompt, 
+      [], 
+      "Please analyze my session data and my medical history to provide my recovery report."
+    );
 
-      setQuickRepliesVisible(true);
-      setIsLoading(false);
-    };
+    setMessages([{ 
+      role: "assistant", 
+      content: reportMsg, 
+      timestamp: new Date() 
+    }]);
+
+  } catch (error) {
+    console.error("Report generation failed:", error);
+    setMessages([{ 
+      role: "assistant", 
+      content: "I've processed your session, but I'm having trouble generating the detailed report. You did great!", 
+      timestamp: new Date() 
+    }]);
+  } finally {
+    setQuickRepliesVisible(true);
+    setIsLoading(false);
+  }
+};
 
     init();
   }, [isOpen]);
