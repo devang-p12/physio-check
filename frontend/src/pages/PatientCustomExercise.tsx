@@ -173,6 +173,7 @@ class LiveMatcher {
       if (this.exerciseMode === "workout" && this.currentTargetIndex >= this.template.length) {
         this.repCount++;
         this.currentTargetIndex = 0;
+        this.repThreshold = 60; // Reset to strict mode for next rep
         this.triggerCooldown();
         status = "✓ Rep Logged!";
       } else if (this.exerciseMode === "workout") {

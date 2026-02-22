@@ -127,7 +127,7 @@ export const getSessionsByAssignment = async (assignmentId) => {
     });
 };
 
-export const getSessionsByPatient = async (patientId, limit = 10) => {
+export const getSessionsByPatient = async (patientId, limit = 100) => {
   return await Session.find({ patientId })
     .sort({ startTime: -1 })
     .limit(limit)

@@ -188,7 +188,9 @@ class LiveMatcher {
   currentTargetIndex = 0;
   private isCooldown = false;
   private readonly cooldownMs = 1500;
-  private readonly repThreshold = 80; // Matching threshold
+  public repThreshold = 60; // Matching threshold
+  private lastTargetTime = Date.now();
+  private readonly struggleTimeMs = 5000;
   private _lastResult: LiveMatchResult | null = null;
   private buffer: NormFrame[] = [];
 
@@ -224,11 +226,25 @@ class LiveMatcher {
     const sim = DTW.similarity(dist);
 
     let status = `Target Position ${this.currentTargetIndex + 1}/${this.template.length}`;
+    const now = Date.now();
+    const isVisible = frame && frame.every(p => (p.visibility ?? 1) > 0.5);
+
+    // Adapt threshold if struggling AND visible
+    if (isVisible && now - this.lastTargetTime > this.struggleTimeMs) {
+      if (this.repThreshold > 30) {
+        this.repThreshold -= 15;
+        console.log(`[LiveMatcher] Threshold lowered to ${this.repThreshold}% due to struggle`);
+      }
+      this.lastTargetTime = now;
+    }
+
     if (sim >= this.repThreshold) {
       this.currentTargetIndex++;
+      this.lastTargetTime = now; // reset on hit
       if (this.currentTargetIndex >= this.template.length) {
         this.repCount++;
         this.currentTargetIndex = 0;
+        this.repThreshold = 60; // Reset threshold for new rep
         this.triggerCooldown();
         status = "✓ Rep Logged!";
       } else {

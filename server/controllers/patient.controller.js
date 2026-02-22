@@ -91,8 +91,8 @@ export const getTodaysExercises = async (req, res) => {
         // Custom exercise template info (no frames — just metadata for the card)
         customTemplateId: exercise.customTemplateId
           ? (exercise.customTemplateId._id
-              ? exercise.customTemplateId._id.toString()
-              : exercise.customTemplateId.toString())
+            ? exercise.customTemplateId._id.toString()
+            : exercise.customTemplateId.toString())
           : null,
         customTemplate: exercise.customTemplateId && exercise.customTemplateId._id ? {
           id: exercise.customTemplateId._id.toString(),
@@ -120,27 +120,29 @@ export const getAssignment = async (req, res) => {
     const assignmentPatientId = assignment.patientId._id ? assignment.patientId._id.toString() : assignment.patientId.toString();
     if (assignmentPatientId !== patientId) return res.status(403).json({ message: 'Not authorized to access this assignment' });
 
-    return res.json({ assignment: {
-      id: assignment._id.toString(),
-      date: assignment.date,
-      endDate: assignment.endDate,
-      prescription: JSON.parse(assignment.prescription),
-      completed: assignment.completed,
-      totalSessions: assignment.totalSessions,
-      averagePerformance: assignment.averagePerformance,
-      exercise: assignment.exerciseId && assignment.exerciseId._id ? {
-        id: assignment.exerciseId._id.toString(),
-        name: assignment.exerciseId.name,
-        reps: assignment.exerciseId.reps,
-        duration: assignment.exerciseId.duration,
-        description: assignment.exerciseId.description
-      } : null,
-      customTemplateId: assignment.customTemplateId
-        ? (assignment.customTemplateId._id
+    return res.json({
+      assignment: {
+        id: assignment._id.toString(),
+        date: assignment.date,
+        endDate: assignment.endDate,
+        prescription: JSON.parse(assignment.prescription),
+        completed: assignment.completed,
+        totalSessions: assignment.totalSessions,
+        averagePerformance: assignment.averagePerformance,
+        exercise: assignment.exerciseId && assignment.exerciseId._id ? {
+          id: assignment.exerciseId._id.toString(),
+          name: assignment.exerciseId.name,
+          reps: assignment.exerciseId.reps,
+          duration: assignment.exerciseId.duration,
+          description: assignment.exerciseId.description
+        } : null,
+        customTemplateId: assignment.customTemplateId
+          ? (assignment.customTemplateId._id
             ? assignment.customTemplateId._id.toString()
             : assignment.customTemplateId.toString())
-        : null,
-    } });
+          : null,
+      }
+    });
   } catch (error) {
     console.error('Error in getAssignment:', error);
     return res.status(500).json({ message: 'Internal server error' });
@@ -161,7 +163,7 @@ export const getAssignmentDetails = async (req, res) => {
 
     console.log("✅ FOUND: Assignment exists. Now populating exercise...");
     const populated = await assignment.populate("exerciseId");
-    
+
     res.json({
       exercise: populated.exerciseId,
       prescription: populated.prescription

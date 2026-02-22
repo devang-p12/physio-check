@@ -248,7 +248,7 @@ export const getActive = async (req, res) => {
  */
 export const getSessionHistory = async (req, res) => {
   const patientId = req.user.id;
-  const { limit = 10, assignmentId } = req.query;
+  const { limit = 100, assignmentId } = req.query;
 
   console.log('getSessionHistory called - patientId:', patientId, 'limit:', limit, 'assignmentId:', assignmentId);
 
