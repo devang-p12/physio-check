@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Monitor, MapPin, Calendar, Clock, ChevronLeft, RefreshCw, AlertCircle, CheckCircle2, Video, MessageCircle, CalendarX, Loader2 } from 'lucide-react';
+import { Monitor, MapPin, Calendar, Clock, ChevronLeft, ChevronRight, RefreshCw, AlertCircle, CheckCircle2, Video, MessageCircle, CalendarX, Loader2, Search, ArrowRight } from 'lucide-react';
 
 const PatientBooking = () => {
   const { doctorId } = useParams();
@@ -9,11 +9,20 @@ const PatientBooking = () => {
   const [activeTab, setActiveTab] = useState('book');
   const [slots, setSlots] = useState([]);
   const [myAppointments, setMyAppointments] = useState([]);
-  const [selectedSlot, setSelectedSlot] = useState(null);
-  const [reason, setReason] = useState("");
-  const [sessionMode, setSessionMode] = useState("online");
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
+
+  // Wizard state
+  const [bookingStep, setBookingStep] = useState(1);
+  const [sessionMode, setSessionMode] = useState("online");
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<any>(null);
+  const [reason, setReason] = useState("");
+
+  // Appointments table state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
 
   const token = localStorage.getItem('token');
   const BASE_URL = "http://localhost:5000";
@@ -50,8 +59,7 @@ const PatientBooking = () => {
     }
   };
 
-  // Returns true if appointment is within 10 min before start and before end
-  const isLiveNow = (apt) => {
+  const isLiveNow = (apt: any) => {
     const now = new Date();
     const start = new Date(apt.startTime);
     const end = new Date(apt.endTime);
@@ -70,8 +78,12 @@ const PatientBooking = () => {
       });
       if (res.ok) {
         alert("Booking Request Sent!");
+        // Reset wizard
+        setBookingStep(1);
         setSelectedSlot(null);
+        setSelectedDate(null);
         setReason("");
+        setSessionMode("online");
         fetchMyAppointments();
         setActiveTab('myAppointments');
       } else {
@@ -85,7 +97,7 @@ const PatientBooking = () => {
     }
   };
 
-  const handleRequestModeSwitch = async (appointmentId, currentMode) => {
+  const handleRequestModeSwitch = async (appointmentId: string, currentMode: string) => {
     const requestedMode = currentMode === 'online' ? 'offline' : 'online';
     try {
       const res = await fetch(`${BASE_URL}/appointment/switch-request`, {
@@ -105,40 +117,52 @@ const PatientBooking = () => {
     }
   };
 
-  const groupedSlots = (slots || []).reduce((acc, slot) => {
+  const groupedSlots = (slots || []).reduce((acc: any, slot: any) => {
     const date = slot.date;
     if (!acc[date]) acc[date] = [];
     acc[date].push(slot);
     return acc;
   }, {});
 
-  const getStatusColor = (status) => {
-    if (status === 'approved') return 'bg-green-100 text-green-700';
+  const availableDates = Object.keys(groupedSlots).sort();
+
+  const getStatusColor = (status: string) => {
+    if (status === 'approved') return 'bg-emerald-100 text-emerald-700';
     if (status === 'pending') return 'bg-amber-100 text-amber-700';
     return 'bg-red-100 text-red-700';
   };
 
+  // Filter & Pagination for Appointments
+  const filteredAppointments = myAppointments.filter((apt: any) => {
+    const docName = (apt.doctorId?.name || "").toLowerCase();
+    const txt = searchQuery.toLowerCase();
+    return docName.includes(txt) || apt.status.includes(txt) || apt.sessionMode.includes(txt);
+  });
+
+  const totalPages = Math.ceil(filteredAppointments.length / itemsPerPage);
+  const currentAppointments = filteredAppointments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-8 bg-gray-50 min-h-screen font-sans">
+    <div className="max-w-7xl mx-auto p-4 md:p-8 bg-slate-50 min-h-screen font-sans">
       <header className="mb-8">
-        <button onClick={() => navigate('/patient/doctors')} className="flex items-center text-indigo-600 font-semibold text-sm mb-4 hover:underline">
-          <ChevronLeft size={16} /> View All Doctors
+        <button onClick={() => navigate('/patient/doctors')} className="flex items-center text-teal-600 font-bold text-sm mb-6 hover:underline group">
+          <ChevronLeft size={16} className="group-hover:-translate-x-1 transition-transform" /> View All Doctors
         </button>
 
-        <div className="flex gap-2 p-1 bg-white rounded-2xl border border-gray-200 shadow-sm w-fit">
+        <div className="flex gap-2 p-1.5 bg-white rounded-xl border border-slate-200 shadow-sm w-fit">
           <button
             onClick={() => setActiveTab('book')}
-            className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${activeTab === 'book' ? 'bg-indigo-600 text-white shadow' : 'text-gray-500 hover:text-indigo-500'}`}
+            className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${activeTab === 'book' ? 'bg-teal-600 text-white shadow-md' : 'text-slate-500 hover:text-teal-600 hover:bg-teal-50'}`}
           >
             Book Appointment
           </button>
           <button
             onClick={() => { setActiveTab('myAppointments'); fetchMyAppointments(); }}
-            className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${activeTab === 'myAppointments' ? 'bg-indigo-600 text-white shadow' : 'text-gray-500 hover:text-indigo-500'}`}
+            className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all flex items-center gap-2 ${activeTab === 'myAppointments' ? 'bg-teal-600 text-white shadow-md' : 'text-slate-500 hover:text-teal-600 hover:bg-teal-50'}`}
           >
             My Appointments
             {myAppointments.length > 0 && (
-              <span className="ml-2 bg-indigo-100 text-indigo-700 rounded-full px-2 py-0.5 text-[10px] font-black">
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${activeTab === 'myAppointments' ? 'bg-white/20 text-white' : 'bg-teal-100 text-teal-700'}`}>
                 {myAppointments.length}
               </span>
             )}
@@ -148,272 +172,328 @@ const PatientBooking = () => {
 
       {/* ─── TAB: BOOK ─── */}
       {activeTab === 'book' && (
-        <>
-          <div className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
-            <div>
-              <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">Weekly Schedule</h2>
-              <p className="text-gray-500">Choose a time and session type for your consultation.</p>
-            </div>
-            <div className="flex gap-4 p-3 bg-white rounded-xl border border-gray-200 shadow-sm text-[10px] font-bold tracking-wider">
-              <div className="flex items-center gap-1.5"><span className="w-3 h-3 bg-green-500 rounded-sm"></span> FREE</div>
-              <div className="flex items-center gap-1.5"><span className="w-3 h-3 bg-yellow-400 rounded-sm"></span> PENDING</div>
-              <div className="flex items-center gap-1.5"><span className="w-3 h-3 bg-red-400 rounded-sm"></span> BOOKED</div>
-            </div>
+        <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-6 md:p-10">
+          <div className="mb-8">
+            <h2 className="text-3xl font-black text-slate-900 tracking-tight">Schedule Session</h2>
+            <p className="text-slate-500 mt-1">Complete the steps below to request a consultation.</p>
           </div>
 
-          <div className="overflow-x-auto pb-4">
-            {fetching ? (
-              <div className="flex flex-col items-center justify-center py-24 gap-4 text-indigo-400">
-                <Loader2 size={36} className="animate-spin" />
-                <p className="text-sm font-semibold text-gray-400">Loading available slots...</p>
-              </div>
-            ) : Object.entries(groupedSlots).length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-24 gap-4">
-                <div className="w-20 h-20 rounded-3xl bg-gray-100 flex items-center justify-center">
-                  <CalendarX size={36} className="text-gray-300" />
+          {fetching ? (
+             <div className="flex flex-col items-center justify-center py-24 gap-4 text-teal-500">
+               <Loader2 size={36} className="animate-spin" />
+               <p className="text-sm font-bold tracking-widest text-slate-400 uppercase">Loading calendar...</p>
+             </div>
+          ) : availableDates.length === 0 ? (
+             <div className="flex flex-col items-center justify-center py-24 gap-4">
+               <div className="w-20 h-20 rounded-3xl bg-slate-50 flex items-center justify-center text-slate-300">
+                 <CalendarX size={36} />
+               </div>
+               <div className="text-center">
+                 <p className="font-black text-slate-800 text-xl">No availability set</p>
+                 <p className="text-slate-500 mt-2 max-w-sm mx-auto">This doctor hasn't added any available slots yet. Please try another doctor.</p>
+               </div>
+               <button onClick={fetchSlots} className="mt-4 flex items-center gap-2 bg-teal-50 text-teal-600 px-6 py-3 rounded-xl font-bold hover:bg-teal-100 transition">
+                 <RefreshCw size={16} /> Refresh Calendar
+               </button>
+             </div>
+          ) : (
+            <div className="flex flex-col lg:flex-row gap-10">
+              {/* Stepper Wizard */}
+              <div className="flex-1 space-y-8">
+                
+                {/* STEP 1: MODE */}
+                <div className={`transition-opacity ${bookingStep >= 1 ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Step 1: Consultation Mode</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <button
+                      onClick={() => { setSessionMode("online"); setBookingStep(Math.max(bookingStep, 2)); }}
+                      className={`flex flex-col items-center justify-center gap-3 p-6 rounded-2xl border-2 transition-all ${sessionMode === 'online' && bookingStep >= 2 ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-100 hover:border-teal-200 text-slate-600'}`}
+                    >
+                      <Monitor size={32} className={sessionMode === 'online' && bookingStep >= 2 ? 'text-teal-500' : 'text-slate-400'} />
+                      <span className="font-bold">Online Video</span>
+                    </button>
+                    <button
+                      onClick={() => { setSessionMode("offline"); setBookingStep(Math.max(bookingStep, 2)); }}
+                      className={`flex flex-col items-center justify-center gap-3 p-6 rounded-2xl border-2 transition-all ${sessionMode === 'offline' && bookingStep >= 2 ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-100 hover:border-teal-200 text-slate-600'}`}
+                    >
+                      <MapPin size={32} className={sessionMode === 'offline' && bookingStep >= 2 ? 'text-teal-500' : 'text-slate-400'} />
+                      <span className="font-bold">In-Clinic</span>
+                    </button>
+                  </div>
                 </div>
-                <div className="text-center">
-                  <p className="font-black text-gray-700 text-lg">No availability set</p>
-                  <p className="text-sm text-gray-400 mt-1 max-w-xs">
-                    This doctor hasn't added any available slots yet. Please check back later or try a different doctor.
-                  </p>
-                </div>
-                <button
-                  onClick={fetchSlots}
-                  className="flex items-center gap-2 bg-indigo-50 text-indigo-600 px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-indigo-100 transition"
-                >
-                  <RefreshCw size={14} /> Refresh
-                </button>
-              </div>
-            ) : (
-            <div className="inline-flex md:grid md:grid-cols-7 gap-4 min-w-[1000px] md:min-w-full">
-              {Object.entries(groupedSlots).map(([date, daySlots]) => {
-                const dateObj = new Date(date);
-                const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
-                const dayNum = dateObj.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
 
-                return (
-                  <div key={date} className="flex-1 flex flex-col gap-3 min-w-[140px]">
-                    <div className="text-center p-3 bg-indigo-600 text-white rounded-2xl shadow-md">
-                      <div className="text-xs uppercase font-bold opacity-80">{dayName}</div>
-                      <div className="text-lg font-black">{dayNum}</div>
-                    </div>
-                    <div className="flex flex-col gap-2 p-2 bg-gray-100/50 rounded-2xl min-h-[400px]">
-                      {daySlots.map((slot, index) => {
+                {/* STEP 2: DATE */}
+                <div className={`transition-opacity ${bookingStep >= 2 ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Step 2: Choose Date</h3>
+                  <div className="flex gap-3 overflow-x-auto pb-4 snap-x">
+                    {availableDates.map(date => {
+                      const d = new Date(date);
+                      const isSelected = selectedDate === date;
+                      return (
+                        <button
+                          key={date}
+                          onClick={() => { setSelectedDate(date); setSelectedSlot(null); setBookingStep(Math.max(bookingStep, 3)); }}
+                          className={`snap-start shrink-0 w-24 p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all ${isSelected ? 'border-teal-500 bg-teal-500 text-white shadow-lg shadow-teal-200' : 'border-slate-100 bg-white hover:border-teal-300 text-slate-600'}`}
+                        >
+                           <span className={`text-[10px] font-bold uppercase tracking-wider ${isSelected ? 'text-teal-100' : 'text-slate-400'}`}>
+                             {d.toLocaleDateString('en-US', { weekday: 'short' })}
+                           </span>
+                           <span className="text-2xl font-black">{d.getDate()}</span>
+                           <span className={`text-xs font-semibold ${isSelected ? 'text-teal-100' : 'text-slate-500'}`}>
+                             {d.toLocaleDateString('en-US', { month: 'short' })}
+                           </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* STEP 3: TIME */}
+                {selectedDate && (
+                  <div className={`transition-opacity ${bookingStep >= 3 ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Step 3: Choose Time</h3>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                      {groupedSlots[selectedDate].map((slot: any, idx: number) => {
                         const time = new Date(slot.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                         const isSelected = selectedSlot === slot;
-                        let style, disabled = false;
-
-                        if (slot.status === "approved") {
-                          style = "bg-red-50 border-red-100 text-red-300 cursor-not-allowed"; disabled = true;
-                        } else if (slot.status === "pending") {
-                          style = "bg-yellow-50 border-yellow-100 text-yellow-600 cursor-not-allowed"; disabled = true;
-                        } else if (isSelected) {
-                          style = "bg-indigo-600 border-indigo-600 text-white shadow-lg ring-2 ring-indigo-200 ring-offset-1";
-                        } else {
-                          style = "bg-green-50 border-green-100 text-green-700 hover:bg-green-100 hover:scale-[1.02]";
-                        }
+                        const isUnavailable = slot.status !== 'available';
 
                         return (
                           <button
-                            key={index}
-                            disabled={disabled}
-                            onClick={() => setSelectedSlot(slot)}
-                            className={`py-3 px-2 rounded-xl border text-[11px] font-bold transition-all duration-150 flex flex-col items-center gap-0.5 ${style}`}
+                            key={idx}
+                            disabled={isUnavailable}
+                            onClick={() => { setSelectedSlot(slot); setBookingStep(4); }}
+                            className={`py-3 px-2 rounded-xl border-2 text-sm font-bold transition-all flex flex-col items-center justify-center gap-1
+                              ${isUnavailable ? 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed' : 
+                                isSelected ? 'border-teal-600 bg-teal-600 text-white shadow-md' : 'border-slate-200 bg-white hover:border-teal-400 text-slate-700'
+                              }`}
                           >
                             {time}
-                            <span className="text-[8px] opacity-60 uppercase">{slot.status === 'available' ? 'Free' : slot.status}</span>
+                            {isUnavailable && <span className="text-[9px] uppercase tracking-wider opacity-60">{slot.status}</span>}
                           </button>
                         );
                       })}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-            )}
-          </div>
-        </>
-      )}
+                )}
+              </div>
 
-      {/* ─── TAB: MY APPOINTMENTS ─── */}
-      {activeTab === 'myAppointments' && (
-        <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight">My Appointments</h2>
-            <button onClick={fetchMyAppointments} className="flex items-center gap-2 text-indigo-600 text-sm font-bold hover:underline">
-              <RefreshCw size={14} /> Refresh
-            </button>
-          </div>
-
-          {myAppointments.length === 0 ? (
-            <div className="text-center py-20">
-              <Clock className="mx-auto text-gray-200 mb-2" size={48} />
-              <p className="text-gray-400 italic">No appointments yet. Book one above!</p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-4">
-              {myAppointments.map((apt) => {
-                const switchPending = apt.modeSwitchRequest?.status === 'pending';
-                const switchApproved = apt.modeSwitchRequest?.status === 'approved';
-                const canRequestSwitch = apt.status === 'approved' && !switchPending;
-                const live = isLiveNow(apt);
-                // Chat & video only for online + approved + live time window
-                const canJoin = apt.status === 'approved' && apt.sessionMode === 'online' && live;
-
-                return (
-                  <div key={apt._id} className={`border rounded-[1.5rem] p-5 hover:shadow-md transition-all ${canJoin ? 'border-indigo-200 bg-indigo-50/30' : 'border-gray-100'}`}>
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-
-                      {/* Left: Info */}
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-black text-gray-900">{apt.doctorId?.name || "Doctor"}</p>
-                          <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase ${getStatusColor(apt.status)}`}>
-                            {apt.status}
-                          </span>
-                          {/* LIVE pill — only shows during the time window */}
-                          {canJoin && (
-                            <span className="px-2 py-0.5 rounded-lg text-[9px] font-black uppercase bg-red-100 text-red-600 animate-pulse">
-                              ● LIVE NOW
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-blue-600 font-medium">"{apt.reason || "General Checkup"}"</p>
-                        <div className="flex items-center gap-3 mt-1">
-                          <span className="text-xs text-gray-500 flex items-center gap-1">
-                            <Calendar size={12} />
-                            {new Date(apt.startTime).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                          </span>
-                          <span className="text-xs text-gray-500 flex items-center gap-1">
-                            <Clock size={12} />
-                            {new Date(apt.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
+              {/* STEP 4: CONFIRMATION PANEL */}
+              <div className="lg:w-96 shrink-0">
+                <div className={`bg-slate-50 rounded-[2rem] p-6 border-2 border-slate-100 transition-all ${bookingStep === 4 ? 'ring-4 ring-teal-500/20 border-teal-200' : ''}`}>
+                  <h3 className="text-lg font-black text-slate-900 mb-6">Booking Summary</h3>
+                  
+                  {bookingStep < 4 ? (
+                    <div className="text-center py-12 text-slate-400 flex flex-col items-center gap-3">
+                      <div className="w-16 h-16 rounded-full border-2 border-dashed border-slate-300 flex items-center justify-center">
+                        <CheckCircle2 size={24} className="text-slate-300" />
                       </div>
-
-                      {/* Right: Mode + Actions */}
-                      <div className="flex flex-col items-end gap-3">
-
-                        {/* Mode Badge */}
-                        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase ${apt.sessionMode === 'online' ? 'bg-indigo-50 text-indigo-600' : 'bg-orange-50 text-orange-600'}`}>
-                          {apt.sessionMode === 'online' ? <Monitor size={12} /> : <MapPin size={12} />}
-                          {apt.sessionMode}
-                        </div>
-
-                        {/* ── CHAT + VIDEO CALL BUTTONS (only when live) ── */}
-                        {canJoin && (
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => navigate(`/session/${apt._id}`)}
-                              title="Open Chat"
-                              className="flex items-center gap-1.5 bg-white border-2 border-indigo-200 text-indigo-600 px-3 py-2 rounded-xl text-[10px] font-black hover:bg-indigo-50 transition-all"
-                            >
-                              <MessageCircle size={14} /> Chat
-                            </button>
-                            <button
-                              onClick={() => navigate(`/session/${apt._id}`)}
-                              title="Join Video Call"
-                              className="flex items-center gap-1.5 bg-indigo-600 text-white px-3 py-2 rounded-xl text-[10px] font-black hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all animate-pulse"
-                            >
-                              <Video size={14} /> Join Call
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Mode switch pending status */}
-                        {switchPending && (
-                          <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-100 px-3 py-1.5 rounded-xl text-[9px] font-black text-amber-700 uppercase">
-                            <AlertCircle size={11} />
-                            Switch to {apt.modeSwitchRequest.requestedMode} — Awaiting Doctor
-                          </div>
-                        )}
-
-                        {/* Mode switch approved status */}
-                        {switchApproved && (
-                          <div className="flex items-center gap-1.5 bg-green-50 border border-green-100 px-3 py-1.5 rounded-xl text-[9px] font-black text-green-700 uppercase">
-                            <CheckCircle2 size={11} />
-                            Mode switched to {apt.sessionMode}
-                          </div>
-                        )}
-
-                        {/* Request Mode Switch Button */}
-                        {canRequestSwitch && (
-                          <button
-                            onClick={() => handleRequestModeSwitch(apt._id, apt.sessionMode)}
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border-2 border-indigo-200 text-indigo-600 text-[10px] font-black hover:bg-indigo-50 transition-all"
-                          >
-                            <RefreshCw size={11} />
-                            Switch to {apt.sessionMode === 'online' ? 'Offline' : 'Online'}
-                          </button>
-                        )}
-                      </div>
+                      <p className="text-sm font-medium px-4">Complete steps 1-3 to review and confirm your booking here.</p>
                     </div>
-                  </div>
-                );
-              })}
+                  ) : (
+                    <div className="space-y-6">
+                      <div className="flex items-center gap-4 p-4 bg-white rounded-xl shadow-sm border border-slate-100">
+                        <div className="w-10 h-10 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center">
+                          {sessionMode === 'online' ? <Monitor size={18} /> : <MapPin size={18} />}
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Mode</p>
+                          <p className="font-bold text-slate-800 capitalize">{sessionMode} Consultation</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4 p-4 bg-white rounded-xl shadow-sm border border-slate-100">
+                        <div className="w-10 h-10 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center">
+                           <Calendar size={18} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Date & Time</p>
+                          <p className="font-bold text-slate-800">
+                            {new Date(selectedSlot.startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })},{' '}
+                            {new Date(selectedSlot.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 block">Reason / Notes</label>
+                        <textarea
+                          placeholder="What would you like to discuss today?"
+                          className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none h-24"
+                          value={reason}
+                          onChange={e => setReason(e.target.value)}
+                        />
+                      </div>
+
+                      <button
+                        onClick={handleBook}
+                        disabled={loading}
+                        className="w-full bg-teal-600 text-white font-black py-4 rounded-xl shadow-lg shadow-teal-200 hover:bg-teal-700 active:scale-[0.98] transition-all disabled:opacity-70 flex items-center justify-center gap-2"
+                      >
+                        {loading ? <Loader2 className="animate-spin" size={20} /> : <><CheckCircle2 size={20} /> Confirm Booking</>}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {/* ─── Booking Confirmation Modal ─── */}
-      {selectedSlot && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-[2.5rem] p-8 shadow-2xl w-full max-w-md border border-gray-100">
-            <h4 className="text-2xl font-black text-gray-900 mb-6">Confirm Session</h4>
-
-            <div className="mb-6">
-              <label className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 block">Initial Session Mode</label>
-              <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-2xl">
-                <button
-                  onClick={() => setSessionMode("online")}
-                  className={`flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all ${sessionMode === 'online' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-indigo-400'}`}
-                >
-                  <Monitor size={16} /> Online
-                </button>
-                <button
-                  onClick={() => setSessionMode("offline")}
-                  className={`flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all ${sessionMode === 'offline' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-indigo-400'}`}
-                >
-                  <MapPin size={16} /> Offline
-                </button>
-              </div>
-              <p className="text-[9px] text-gray-400 mt-2 italic">* You can request a mode switch later if needed.</p>
+      {/* ─── TAB: MY APPOINTMENTS ─── */}
+      {activeTab === 'myAppointments' && (
+        <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+          <div className="p-6 md:p-8 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-black text-slate-900 tracking-tight">My Appointments</h2>
+              <p className="text-slate-500 mt-1 text-sm">Manage your upcoming and past sessions.</p>
             </div>
-
-            <div className="bg-indigo-50 p-5 rounded-[2rem] mb-6 border border-indigo-100">
-              <p className="text-indigo-800 text-sm font-bold flex items-center gap-2">
-                <Calendar size={14} /> {new Date(selectedSlot.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-              </p>
-              <p className="text-indigo-600 text-xl font-black mt-1 flex items-center gap-2">
-                <Clock size={18} /> {new Date(selectedSlot.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </p>
-            </div>
-
-            <textarea
-              className="w-full border-2 border-gray-50 bg-gray-50 rounded-2xl p-4 text-sm focus:border-indigo-500 focus:bg-white outline-none transition-all mb-6"
-              placeholder="What would you like to discuss?..."
-              rows={3}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-
+            
             <div className="flex gap-3">
-              <button onClick={() => setSelectedSlot(null)} className="flex-1 py-4 rounded-2xl font-bold text-gray-400 hover:bg-gray-50 transition">
-                Cancel
-              </button>
-              <button
-                onClick={handleBook}
-                disabled={loading}
-                className="flex-[2] bg-indigo-600 text-white py-4 rounded-2xl font-bold hover:bg-indigo-700 shadow-xl shadow-indigo-200 disabled:bg-gray-300 transition-all"
-              >
-                {loading ? "Processing..." : "Confirm Booking"}
+               <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input 
+                  type="text" 
+                  placeholder="Search appointments..." 
+                  value={searchQuery}
+                  onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                  className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm w-full md:w-60"
+                />
+              </div>
+              <button onClick={fetchMyAppointments} className="p-2 border border-slate-200 rounded-xl text-slate-500 hover:bg-teal-50 hover:border-teal-200 hover:text-teal-600 transition">
+                <RefreshCw size={18} />
               </button>
             </div>
           </div>
+
+          {currentAppointments.length === 0 ? (
+             <div className="text-center py-20 bg-slate-50/50">
+               <Clock className="mx-auto text-slate-300 mb-4" size={48} />
+               <p className="text-slate-800 font-bold text-lg">No appointments found</p>
+               <p className="text-slate-500 text-sm mt-1">Book a new appointment through the booking tab.</p>
+             </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50/50 border-b border-slate-100">
+                  <tr>
+                    <th className="py-4 px-6 text-[10px] font-black uppercase tracking-widest text-slate-500">Doctor</th>
+                    <th className="py-4 px-6 text-[10px] font-black uppercase tracking-widest text-slate-500">Schedule & Mode</th>
+                    <th className="py-4 px-6 text-[10px] font-black uppercase tracking-widest text-slate-500 hidden md:table-cell">Status & Notes</th>
+                    <th className="py-4 px-6 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {currentAppointments.map((apt: any) => {
+                    const switchPending = apt.modeSwitchRequest?.status === 'pending';
+                    const switchApproved = apt.modeSwitchRequest?.status === 'approved';
+                    const canRequestSwitch = apt.status === 'approved' && !switchPending;
+                    const live = isLiveNow(apt);
+                    const canJoin = apt.status === 'approved' && apt.sessionMode === 'online' && live;
+
+                    return (
+                      <tr key={apt._id} className={`hover:bg-slate-50 transition-colors ${canJoin ? 'bg-teal-50/30' : ''}`}>
+                        <td className="py-5 px-6 align-top">
+                          <p className="font-bold text-slate-900">Dr. {apt.doctorId?.name || "Doctor"}</p>
+                          <span className={`inline-block mt-1 px-2.5 py-1 rounded-md text-[9px] font-black uppercase ${getStatusColor(apt.status)}`}>
+                            {apt.status}
+                          </span>
+                        </td>
+                        
+                        <td className="py-5 px-6 align-top">
+                          <div className="flex flex-col gap-1.5">
+                            <span className="flex items-center gap-1.5 text-sm font-bold text-slate-800">
+                              <Calendar size={14} className="text-slate-400" />
+                              {new Date(apt.startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </span>
+                            <span className="flex items-center gap-1.5 text-sm text-slate-600">
+                              <Clock size={14} className="text-slate-400" />
+                              {new Date(apt.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            <div className="mt-1 flex items-center gap-1.5 w-fit px-2.5 py-1 rounded-md text-[10px] font-black uppercase bg-slate-100 text-slate-600">
+                              {apt.sessionMode === 'online' ? <Monitor size={12} /> : <MapPin size={12} />}
+                              {apt.sessionMode}
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="py-5 px-6 align-top hidden md:table-cell">
+                          <p className="text-sm text-slate-600 max-w-[200px] truncate" title={apt.reason}>"{apt.reason || "General Checkup"}"</p>
+                          
+                          {switchPending && (
+                            <div className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-amber-600">
+                              <AlertCircle size={12} /> Pending switch to {apt.modeSwitchRequest.requestedMode}
+                            </div>
+                          )}
+                          {switchApproved && (
+                            <div className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-emerald-600">
+                              <CheckCircle2 size={12} /> Switched to {apt.sessionMode}
+                            </div>
+                          )}
+                          {canJoin && (
+                            <div className="mt-2 flex items-center gap-1.5 text-[10px] font-black uppercase bg-red-100 text-red-600 px-2 py-0.5 rounded-md w-fit animate-pulse">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-600" /> LIVE NOW
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="py-5 px-6 align-top">
+                          <div className="flex flex-col items-end gap-2">
+                             {canJoin ? (
+                               <div className="flex gap-2">
+                                 <button onClick={() => navigate(`/session/${apt._id}`)} className="p-2 border border-teal-200 rounded-lg text-teal-600 hover:bg-teal-50 transition" title="Chat">
+                                   <MessageCircle size={16} />
+                                 </button>
+                                 <button onClick={() => navigate(`/session/${apt._id}`)} className="flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-md shadow-red-200 transition-all animate-pulse">
+                                   <Video size={14} /> Join Call
+                                 </button>
+                               </div>
+                             ) : canRequestSwitch ? (
+                               <button onClick={() => handleRequestModeSwitch(apt._id, apt.sessionMode)} className="flex items-center gap-1.5 border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-semibold hover:border-teal-300 hover:text-teal-700 transition">
+                                 <RefreshCw size={12} /> Switch to {apt.sessionMode === 'online' ? 'Offline' : 'Online'}
+                               </button>
+                             ) : (
+                               <span className="text-xs text-slate-400 italic">No actions available</span>
+                             )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50/50">
+              <span className="text-sm text-slate-500 font-medium">
+                Page <span className="font-bold text-slate-900">{currentPage}</span> of <span className="font-bold text-slate-900">{totalPages}</span>
+              </span>
+              <div className="flex items-center gap-1">
+                <button 
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="p-2 border border-slate-200 rounded-lg bg-white disabled:opacity-50 hover:bg-slate-50 transition"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <button 
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-2 border border-slate-200 rounded-lg bg-white disabled:opacity-50 hover:bg-slate-50 transition"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
+
         </div>
       )}
+
     </div>
   );
 };

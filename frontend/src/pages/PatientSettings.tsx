@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Watch, AlertCircle, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
+import { Watch, AlertCircle, CheckCircle, XCircle, RefreshCw, Moon } from 'lucide-react';
 
 interface Settings {
   smartwatchEnabled: boolean;
@@ -46,6 +46,19 @@ const PatientSettings: React.FC = () => {
     message: ''
   });
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
+  const handleToggleTheme = () => {
+    const next = !isDark;
+    setIsDark(next);
+    if(next) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  };
 
   useEffect(() => {
     fetchSettings();
@@ -374,6 +387,36 @@ const PatientSettings: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Global UI Preferences */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <Moon className="text-indigo-600" size={24} />
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Dark Mode
+                </h3>
+                <p className="text-sm text-gray-600">
+                  Switch the entire interface to Navy/Teal dark theme
+                </p>
+              </div>
+            </div>
+            
+            <button
+              onClick={handleToggleTheme}
+              className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
+                isDark ? 'bg-indigo-600' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+                  isDark ? 'translate-x-7' : 'translate-x-1'
+                }`}
+              />
+            </button>
           </div>
         </div>
 

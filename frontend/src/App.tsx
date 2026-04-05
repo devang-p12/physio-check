@@ -25,9 +25,14 @@ import DoctorList from "./pages/DoctorList";
 import PatientBooking from "./pages/PatientBooking";
 import ChatbotPage from "./pages/Chatbot";
 import PatientCustomExercise from "./pages/PatientCustomExercise";
+import PatientTodaysPlan from "./pages/PatientTodaysPlan";
 import DoctorTodaysAssignments from "./pages/DoctorTodaysAssignments";
 import SessionPage from "./pages/SessionPage";
 import CreateExercise from "./pages/CreateExercise";
+import DoctorPatientDirectory from "./pages/DoctorPatientDirectory";
+import CurrentPlan from "./pages/CurrentPlan";
+import DoctorProfile from "./pages/DoctorProfile";
+import PatientProfile from "./pages/PatientProfile";
 import { SocketProvider } from './providers/socket';
 import { PeerProvider } from './providers/PeerProvider'; // Make sure to import this
 
@@ -47,6 +52,12 @@ const GuestRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 function App() {
+  React.useEffect(() => {
+    if (localStorage.getItem('theme') === 'dark') {
+      document.documentElement.classList.add('dark');
+    }
+  }, []);
+
   return (
     <SocketProvider>
       <PeerProvider>
@@ -90,6 +101,15 @@ function App() {
               element={
                 <ProtectedRoute role="doctor">
                   <AssignExercise />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/doctor/profile"
+              element={
+                <ProtectedRoute role="doctor">
+                  <DoctorProfile />
                 </ProtectedRoute>
               }
             />
@@ -157,12 +177,39 @@ function App() {
               }
             />
 
+            <Route
+              path="/doctor/patients"
+              element={
+                <ProtectedRoute role="doctor">
+                  <DoctorPatientDirectory />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/doctor/patient/:patientId/plan"
+              element={
+                <ProtectedRoute role="doctor">
+                  <CurrentPlan />
+                </ProtectedRoute>
+              }
+            />
+
             {/* PATIENT ROUTES */}
             <Route
               path="/patient"
               element={
                 <ProtectedRoute role="patient">
                   <PatientDashboard />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/patient/profile"
+              element={
+                <ProtectedRoute role="patient">
+                  <PatientProfile />
                 </ProtectedRoute>
               }
             />
@@ -244,6 +291,15 @@ function App() {
               element={
                 <ProtectedRoute role="patient">
                   <PatientCustomExercise />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/patient/todays-plan"
+              element={
+                <ProtectedRoute role="patient">
+                  <PatientTodaysPlan />
                 </ProtectedRoute>
               }
             />
