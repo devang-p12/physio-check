@@ -30,6 +30,20 @@ const EMOTION_EMOJI: Record<string, string> = {
   disgusted: "🤢",
 };
 
+// Vector Diagram Mapping
+const EXERCISE_IMAGES: Record<string, string> = {
+  'Knee Extension': '/images/exercises/knee_extension_demo.png',
+  'Shoulder Abduction': '/images/exercises/shoulder_abduction_demo.png',
+  'Hip Hinge': '/images/exercises/hip_hinge_demo.png',
+  'Calf Raise': '/images/exercises/calf_raise_demo.png',
+  'Lateral Leg Raise': '/images/exercises/lateral_raise_demo.png',
+  'Knee Flexion': '/images/exercises/knee_flexion_demo.png',
+  'Shoulder Flexion': '/images/exercises/shoulder_flex_demo.png',
+  'Side Bend': '/images/exercises/side_bend_demo.png',
+  'Single Leg Balance': '/images/exercises/single_balance_demo.png',
+  'Elbow Flexion': '/images/exercises/elbow_flexion_demo.png',
+};
+
 const ExerciseSession = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -576,6 +590,15 @@ const ExerciseSession = () => {
 
           {/* Instructions */}
           <div>
+            {EXERCISE_IMAGES[assignment?.exercise?.name] && (
+              <div className="mb-6 bg-slate-50 border border-slate-100 rounded-2xl p-4 flex justify-center items-center shadow-inner">
+                <img 
+                  src={EXERCISE_IMAGES[assignment?.exercise?.name]} 
+                  alt={assignment?.exercise?.name} 
+                  className="max-w-full h-auto max-h-[300px] object-contain"
+                />
+              </div>
+            )}
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-slate-900 flex items-center gap-2">
                 <span className="w-6 h-6 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-xs">

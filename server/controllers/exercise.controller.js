@@ -4,16 +4,27 @@ export const getExercises = async (req, res) => {
   try {
     let exercises = await getAllExercises();
 
-    // Always ensure Reaction Exercise exists in the library
-    const hasReaction = exercises.some(e => e.name === 'Reaction Exercise');
-    if (!hasReaction) {
-      const rx = await createExercise({
-        name: 'Reaction Exercise',
-        reps: null,
-        duration: 30,
-        description: 'Reaction time exercise — touch floating targets with your finger',
-      });
-      exercises = [...exercises, rx];
+    const requiredExercises = [
+      { name: 'Reaction Exercise', reps: null, duration: 30, description: 'Reaction time exercise (tap targets / fingertip)' },
+      { name: 'Knee Extension', reps: 10, duration: null, description: 'MediaPipe tracked Seated Leg Raise' },
+      { name: 'Shoulder Abduction', reps: 10, duration: null, description: 'MediaPipe tracked Lateral Arm Raise' },
+      { name: 'Hip Hinge', reps: 10, duration: null, description: 'MediaPipe tracked Forward Bend' },
+      { name: 'Calf Raise', reps: 15, duration: null, description: 'MediaPipe tracked Heel Raise' },
+      { name: 'Lateral Leg Raise', reps: 10, duration: null, description: 'MediaPipe tracked Side Leg Raise' },
+      { name: 'Knee Flexion', reps: 10, duration: null, description: 'MediaPipe tracked Standing Hamstring Curl' },
+      { name: 'Shoulder Flexion', reps: 10, duration: null, description: 'MediaPipe tracked Forward Arm Raise' },
+      { name: 'Side Bend', reps: 10, duration: null, description: 'MediaPipe tracked Lateral Trunk Flexion' },
+      { name: 'Single Leg Balance', reps: null, duration: 30, description: 'MediaPipe tracked Static Balance' },
+      { name: 'Elbow Flexion', reps: 10, duration: null, description: 'MediaPipe tracked Bicep Curl' }
+    ];
+
+    let updated = false;
+    for (const reqEx of requiredExercises) {
+      if (!exercises.some(e => e.name === reqEx.name)) {
+        const created = await createExercise(reqEx);
+        exercises.push(created);
+        updated = true;
+      }
     }
 
     res.json({ exercises });

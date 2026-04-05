@@ -1,1 +1,54 @@
 @import "tailwindcss";
+
+/* ── PHYSIOCHECK GLOBAL DARK MODE OVERRIDES ── */
+.dark body { 
+  background-color: #0F172A !important; 
+  color: #F1F5F9 !important; 
+}
+.dark .bg-white { 
+  background-color: #1E293B !important; 
+}
+.dark .bg-\[\#f8fafc\], .dark .bg-\[\#F8FAFC\] { 
+  background-color: #0F172A !important; 
+}
+.dark .border-slate-100, .dark .border-slate-200 { 
+  border-color: #334155 !important; 
+}
+.dark .text-slate-900, .dark .text-slate-800, .dark .text-gray-900, .dark .text-gray-800 { 
+  color: #F8FAFC !important; 
+}
+.dark .text-slate-700, .dark .text-slate-600, .dark .text-gray-700, .dark .text-gray-600 { 
+  color: #CBD5E1 !important; 
+}
+.dark .text-slate-500, .dark .text-slate-400, .dark .text-gray-500, .dark .text-gray-400 { 
+  color: #94A3B8 !important; 
+}
+.dark .bg-slate-50, .dark .bg-slate-100, .dark .bg-gray-50, .dark .bg-gray-100 { 
+  background-color: #0B1121 !important; 
+}
+.dark .bg-teal-50 { 
+  background-color: rgba(20, 184, 166, 0.15) !important; 
+}
+.dark .text-teal-600, .dark .text-teal-700 { 
+  color: #5EEAD4 !important; 
+}
+.dark .border-teal-100, .dark .border-teal-200 { 
+  border-color: rgba(20, 184, 166, 0.3) !important; 
+}
+.dark input, .dark textarea {
+  background-color: #1E293B !important;
+  color: #F1F5F9 !important;
+  border-color: #334155 !important;
+}
+.dark table th {
+  background-color: #0F172A !important;
+  border-color: #334155 !important;
+  color: #94A3B8 !important;
+}
+.dark table tr {
+  border-color: #334155 !important;
+}
+.dark nav {
+  background-color: #1E293B !important;
+  border-bottom-color: #334155 !important;
+}

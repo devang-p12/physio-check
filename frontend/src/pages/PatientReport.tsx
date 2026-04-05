@@ -6,15 +6,13 @@ import {
 } from 'recharts';
 import {
   ArrowLeft, Download, Activity, Heart, Flame, Clock,
-  Target, TrendingUp, TrendingDown, Minus, CheckCircle2,
-  AlertTriangle, BarChart2, Filter, Dumbbell, User, Calendar,
-  ChevronDown, ChevronUp, RefreshCw, Zap
+  TrendingDown, TrendingUp, Minus, CheckCircle2,
+  AlertTriangle, BarChart2, Filter, Dumbbell, Calendar,
+  ChevronDown, ChevronUp, RefreshCw, Zap, Table2
 } from 'lucide-react';
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
 const fmtDuration = (sec?: number | null) => {
-  if (!sec) return '—';
+  if (!sec) return '0s';
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
@@ -31,24 +29,8 @@ const formColor = (score?: number | null) => {
   return 'bg-red-100 text-red-700';
 };
 
-const formBorderColor = (score?: number | null) => {
-  if (score == null) return '#94a3b8';
-  if (score >= 85) return '#10b981';
-  if (score >= 70) return '#14b8a6';
-  if (score >= 50) return '#f59e0b';
-  return '#ef4444';
-};
-
 const ZONE_COLORS = ['#38bdf8', '#34d399', '#fb923c', '#f43f5e'];
-const CHART_COLORS = ['#14b8a6', '#6366f1', '#f59e0b', '#ec4899', '#8b5cf6'];
-
-// ─── Filter Panel ──────────────────────────────────────────────────────────────
-
-interface FilterProps {
-  availableExercises: { id: string; name: string }[];
-  onApply: (filters: ReportFilters) => void;
-  loading: boolean;
-}
+const CHART_COLORS = ['#1D9E75', '#6366f1', '#f59e0b', '#ec4899', '#8b5cf6'];
 
 interface ReportFilters {
   startDate: string;
@@ -57,191 +39,13 @@ interface ReportFilters {
 }
 
 const PRESET_RANGES = [
-  { label: 'Last 7 days', days: 7 },
-  { label: 'Last 30 days', days: 30 },
-  { label: 'Last 90 days', days: 90 },
-  { label: 'Last 6 months', days: 180 },
-  { label: 'All time', days: 0 },
+  { label: '7 days', days: 7 },
+  { label: '30 days', days: 30 },
+  { label: '90 days', days: 90 },
+  { label: 'All', days: 0 },
 ];
 
-const FilterPanel: React.FC<FilterProps> = ({ availableExercises, onApply, loading }) => {
-  const today = new Date().toISOString().split('T')[0];
-  const [preset, setPreset] = useState<number | null>(30);
-  const [customStart, setCustomStart] = useState('');
-  const [customEnd, setCustomEnd] = useState(today);
-  const [selectedExercises, setSelectedExercises] = useState<string[]>([]);
-  const [showExercises, setShowExercises] = useState(false);
-
-  const buildFilters = (): ReportFilters => {
-    let start = '';
-    let end = '';
-    if (preset === 0) {
-      start = '';
-      end = '';
-    } else if (preset !== null) {
-      const d = new Date();
-      d.setDate(d.getDate() - preset);
-      start = d.toISOString().split('T')[0];
-      end = today;
-    } else {
-      start = customStart;
-      end = customEnd;
-    }
-    return { startDate: start, endDate: end, exerciseIds: selectedExercises };
-  };
-
-  const toggleExercise = (id: string) => {
-    setSelectedExercises(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
-  };
-
-  return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-6">
-      <div className="flex items-center gap-2 text-slate-700 font-bold">
-        <Filter size={18} className="text-teal-600" />
-        Configure Report
-      </div>
-
-      {/* Date Range */}
-      <div>
-        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Session Period</p>
-        <div className="flex flex-wrap gap-2 mb-4">
-          {PRESET_RANGES.map(r => (
-            <button
-              key={r.days}
-              onClick={() => setPreset(r.days)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-                preset === r.days
-                  ? 'bg-teal-600 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
-          <button
-            onClick={() => setPreset(null)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-              preset === null
-                ? 'bg-teal-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            Custom
-          </button>
-        </div>
-
-        {preset === null && (
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-slate-500 font-medium block mb-1">From</label>
-              <input
-                type="date"
-                value={customStart}
-                max={customEnd}
-                onChange={e => setCustomStart(e.target.value)}
-                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400/30"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-slate-500 font-medium block mb-1">To</label>
-              <input
-                type="date"
-                value={customEnd}
-                min={customStart}
-                max={today}
-                onChange={e => setCustomEnd(e.target.value)}
-                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400/30"
-              />
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Exercise Filter */}
-      {availableExercises.length > 0 && (
-        <div>
-          <button
-            onClick={() => setShowExercises(p => !p)}
-            className="flex items-center justify-between w-full text-xs font-bold text-slate-400 uppercase tracking-wider mb-2"
-          >
-            <span>Filter by Exercise</span>
-            {showExercises ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-          {showExercises && (
-            <div className="flex flex-wrap gap-2 mt-2">
-              {availableExercises.map(ex => (
-                <button
-                  key={ex.id}
-                  onClick={() => toggleExercise(ex.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold border transition-all ${
-                    selectedExercises.includes(ex.id)
-                      ? 'bg-teal-50 border-teal-400 text-teal-700'
-                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                  }`}
-                >
-                  <Dumbbell size={12} />
-                  {ex.name}
-                </button>
-              ))}
-              <p className="w-full text-[11px] text-slate-400 mt-1">
-                {selectedExercises.length === 0 ? 'Showing all exercises' : `${selectedExercises.length} exercise(s) selected`}
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      <button
-        onClick={() => onApply(buildFilters())}
-        disabled={loading}
-        className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white font-bold py-3 rounded-xl transition-all"
-      >
-        {loading ? <RefreshCw size={16} className="animate-spin" /> : <BarChart2 size={16} />}
-        {loading ? 'Generating...' : 'Generate Report'}
-      </button>
-    </div>
-  );
-};
-
-// ─── Stat Card ──────────────────────────────────────────────────────────────────
-
-const StatCard = ({ icon: Icon, label, value, sub, color = 'teal', trend }: any) => {
-  const colors: Record<string, string> = {
-    teal: 'bg-teal-50 text-teal-600',
-    violet: 'bg-violet-50 text-violet-600',
-    rose: 'bg-rose-50 text-rose-600',
-    orange: 'bg-orange-50 text-orange-600',
-    emerald: 'bg-emerald-50 text-emerald-600',
-    blue: 'bg-blue-50 text-blue-600',
-    yellow: 'bg-yellow-50 text-yellow-700',
-  };
-  return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-      <div className="flex items-center justify-between mb-3">
-        <div className={`p-2.5 rounded-xl ${colors[color] || colors.teal}`}>
-          <Icon size={20} />
-        </div>
-        {trend != null && (
-          <span className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-lg ${
-            trend > 0 ? 'bg-emerald-50 text-emerald-600' : trend < 0 ? 'bg-red-50 text-red-500' : 'bg-slate-100 text-slate-500'
-          }`}>
-            {trend > 0 ? <TrendingUp size={11} /> : trend < 0 ? <TrendingDown size={11} /> : <Minus size={11} />}
-            {trend > 0 ? `+${trend}` : trend}
-          </span>
-        )}
-      </div>
-      <p className="text-2xl font-black tracking-tight text-slate-900">{value}</p>
-      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-0.5">{label}</p>
-      {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
-    </div>
-  );
-};
-
-// ─── Main Page ───────────────────────────────────────────────────────────────
-
-const PatientReport = () => {
+export default function PatientReport() {
   const { patientId } = useParams<{ patientId: string }>();
   const navigate = useNavigate();
   const reportRef = useRef<HTMLDivElement>(null);
@@ -250,44 +54,52 @@ const PatientReport = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState(false);
-  const [appliedFilters, setAppliedFilters] = useState<ReportFilters | null>(null);
 
-  // Load available exercises immediately (no filter needed)
+  const [preset, setPreset] = useState<number>(30);
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedExercises, setSelectedExercises] = useState<string[]>([]);
   const [availableExercises, setAvailableExercises] = useState<{ id: string; name: string }[]>([]);
+  const [showExercises, setShowExercises] = useState(false);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 8;
 
   useEffect(() => {
-    // Pre-load available exercises by fetching with no filters
-    fetchReport({ startDate: '', endDate: '', exerciseIds: [] }, true);
+    fetchReport(true);
   }, [patientId]);
 
-  const fetchReport = async (filters: ReportFilters, preloadOnly = false) => {
+  const fetchReport = async (preloadOnly = false) => {
+    if (!preloadOnly) { setLoading(true); setError(''); }
+    
+    let start = '';
+    let end = '';
     if (!preloadOnly) {
-      setLoading(true);
-      setError('');
-      setAppliedFilters(filters);
+      if (preset === 0) { start = ''; end = ''; }
+      else if (preset !== 0) {
+        const d = new Date(); d.setDate(d.getDate() - preset);
+        start = d.toISOString().split('T')[0];
+        end = new Date().toISOString().split('T')[0];
+      } else { start = customStart; end = customEnd; }
     }
 
     try {
       const token = localStorage.getItem('token');
       const params = new URLSearchParams();
-      if (filters.startDate) params.set('startDate', filters.startDate);
-      if (filters.endDate) params.set('endDate', filters.endDate);
-      if (filters.exerciseIds.length > 0) params.set('exerciseIds', filters.exerciseIds.join(','));
+      if (start) params.set('startDate', start);
+      if (end) params.set('endDate', end);
+      if (selectedExercises.length > 0 && !preloadOnly) params.set('exerciseIds', selectedExercises.join(','));
 
-      const res = await fetch(
-        `http://localhost:5000/doctor/patient/${patientId}/report?${params}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || 'Failed to load report');
-      }
-
+      const res = await fetch(`http://localhost:5000/doctor/patient/${patientId}/report?${params}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to load report');
+      
       const data = await res.json();
-
       if (preloadOnly) {
         setAvailableExercises(data.availableExercises || []);
+        // Also fetch the 30-day default report after preload
+        fetchReport(false);
       } else {
         setReportData(data);
         if (data.availableExercises?.length > availableExercises.length) {
@@ -295,516 +107,255 @@ const PatientReport = () => {
         }
       }
     } catch (e: any) {
-      if (!preloadOnly) setError(e.message || 'Unknown error');
+      if (!preloadOnly) setError(e.message || 'Error fetching report');
     } finally {
       if (!preloadOnly) setLoading(false);
     }
   };
 
-  const exportPDF = () => {
-    if (!reportRef.current || !reportData) return;
-    setExporting(true);
-
-    // Collect the report HTML + all styles (including Tailwind/inline)
-    const reportHtml = reportRef.current.outerHTML;
-
-    // Copy all <style> and <link rel="stylesheet"> from the current document
-    const styleNodes = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'));
-    const styleHtml = styleNodes.map(n => n.outerHTML).join('\n');
-
-    const patientName = reportData.patient?.name || 'Patient';
-    const dateStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-
-    const printWindow = window.open('', '_blank', 'width=1100,height=800');
-    if (!printWindow) {
-      alert('Pop-up blocked. Please allow pop-ups for this site and try again.');
-      setExporting(false);
-      return;
-    }
-
-    printWindow.document.write(`<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8"/>
-  <title>Report – ${patientName} – ${dateStr}</title>
-  ${styleHtml}
-  <style>
-    @page { size: A4; margin: 12mm; }
-    body { background: #f8fafc; font-family: sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    nav, button, .no-print { display: none !important; }
-    * { box-sizing: border-box; }
-    .recharts-wrapper, .recharts-responsive-container { break-inside: avoid; }
-  </style>
-</head>
-<body>
-  <div style="max-width:900px;margin:0 auto;padding:8px;">
-    ${reportHtml}
-  </div>
-  <script>
-    // Wait for recharts SVGs to fully render before printing
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => window.close(), 1000);
-    }, 800);
-  </script>
-</body>
-</html>`);
-    printWindow.document.close();
-
-    setTimeout(() => setExporting(false), 2000);
+  const toggleEx = (id: string) => {
+    setSelectedExercises(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
   const s = reportData?.summary;
-  const adherenceColor = s?.adherenceRate == null ? '' : s.adherenceRate >= 80 ? 'text-emerald-600' : s.adherenceRate >= 50 ? 'text-yellow-600' : 'text-red-500';
+
+  // Synthesize table rows from weekly breakdown or timeline
+  const tableRows = reportData?.timeline ? [...reportData.timeline].reverse() : [];
+  const totalPages = Math.ceil(tableRows.length / itemsPerPage);
+  const paginatedRows = tableRows.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const exportPDF = () => {
+    window.print();
+  };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] font-sans text-slate-900">
-      {/* Navbar */}
-      <nav className="bg-white/90 backdrop-blur-md border-b sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-6 flex items-center justify-between h-16 gap-4">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate(-1)}
-              className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all"
-            >
-              <ArrowLeft size={20} />
+    <div className="min-h-screen bg-[#F8FAFC] font-sans pb-16">
+      
+      {/* ── TOP NAV ── */}
+      <nav className="bg-white border-b sticky top-0 z-50">
+        <div className="px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all">
+              <ArrowLeft size={18} />
             </button>
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 bg-teal-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-teal-200">
-                <BarChart2 size={16} strokeWidth={2.5} />
-              </div>
-              <div>
-                <h1 className="font-extrabold text-base tracking-tight leading-none">
-                  Patient Report
-                </h1>
-                {reportData?.patient && (
-                  <p className="text-[11px] text-slate-400 font-medium leading-none mt-0.5">
-                    {reportData.patient.name}
-                  </p>
-                )}
-              </div>
+            <div>
+              <h1 className="text-lg font-bold text-slate-900 leading-none">Patient Report</h1>
+              <span className="text-xs text-slate-500">{reportData?.patient?.name || 'Loading...'}</span>
+            </div>
+          </div>
+          <button onClick={exportPDF} disabled={exporting || !reportData} className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-800 transition shadow-sm">
+            <Download size={16} /> Print Report
+          </button>
+        </div>
+
+        {/* STICKY TOP CONFIG BAR */}
+        <div className="bg-white/80 backdrop-blur-md border-b px-6 py-3 flex flex-col md:flex-row md:items-center gap-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <Filter size={16} className="text-slate-400" />
+            <div className="flex gap-1.5 p-1 bg-slate-100 rounded-lg">
+              {PRESET_RANGES.map(r => (
+                <button
+                  key={r.days}
+                  onClick={() => setPreset(r.days)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${preset === r.days ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  {r.label}
+                </button>
+              ))}
             </div>
           </div>
 
-          {reportData && (
-            <button
-              onClick={exportPDF}
-              disabled={exporting}
-              className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-lg shadow-slate-200"
-            >
-              {exporting ? <RefreshCw size={15} className="animate-spin" /> : <Download size={15} />}
-              {exporting ? 'Opening...' : 'Print / Save PDF'}
+          <div className="h-6 w-px bg-slate-200 hidden md:block" />
+
+          <div className="relative group">
+            <button onClick={() => setShowExercises(!showExercises)} className="flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
+              <Dumbbell size={14} /> 
+              {selectedExercises.length === 0 ? 'All Exercises' : `${selectedExercises.length} Selected`}
+              <ChevronDown size={14} className="ml-1" />
             </button>
-          )}
+            {showExercises && (
+              <div className="absolute top-full mt-2 left-0 w-64 bg-white border border-slate-200 rounded-xl shadow-xl p-3 z-50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Filter specifically</p>
+                <div className="max-h-48 overflow-y-auto space-y-1">
+                  {availableExercises.map(ex => (
+                    <label key={ex.id} className="flex items-center gap-2 p-2 hover:bg-slate-50 rounded-lg cursor-pointer">
+                      <input type="checkbox" checked={selectedExercises.includes(ex.id)} onChange={() => toggleEx(ex.id)} className="rounded text-teal-600 focus:ring-teal-500" />
+                      <span className="text-xs font-medium text-slate-700 truncate">{ex.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button onClick={() => fetchReport(false)} disabled={loading} className="ml-auto flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-5 py-2 rounded-lg text-sm font-semibold transition shadow-sm disabled:opacity-50">
+            {loading ? <RefreshCw size={14} className="animate-spin" /> : <BarChart2 size={14} />} 
+            Generate
+          </button>
         </div>
       </nav>
 
-      <main className="max-w-7xl mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-8 items-start">
-        {/* LEFT: Filter Panel */}
-        <div className="lg:sticky lg:top-24">
-          <FilterPanel
-            availableExercises={availableExercises}
-            onApply={f => fetchReport(f)}
-            loading={loading}
-          />
-        </div>
+      <main className="max-w-[1400px] mx-auto px-6 py-8 space-y-8">
+        {loading && !reportData && (
+          <div className="flex flex-col items-center justify-center py-32 space-y-4">
+            <div className="w-12 h-12 border-4 border-teal-500/20 border-t-teal-500 rounded-full animate-spin" />
+            <p className="text-slate-400 font-medium">Analyzing performance...</p>
+          </div>
+        )}
 
-        {/* RIGHT: Report */}
-        <div>
-          {!reportData && !loading && !error && (
-            <div className="flex flex-col items-center justify-center py-28 text-slate-400 space-y-3">
-              <BarChart2 size={48} strokeWidth={1} />
-              <p className="text-lg font-bold text-slate-500">Configure and generate your report</p>
-              <p className="text-sm">Select a date range and press Generate Report</p>
-            </div>
-          )}
-
-          {error && (
-            <div className="bg-red-50 text-red-700 rounded-2xl px-6 py-4 font-semibold flex items-center gap-3">
-              <AlertTriangle size={18} />
-              {error}
-            </div>
-          )}
-
-          {loading && (
-            <div className="flex flex-col items-center justify-center py-28 space-y-4">
-              <div className="w-12 h-12 border-4 border-teal-500/20 border-t-teal-500 rounded-full animate-spin" />
-              <p className="text-slate-400 font-medium">Generating report…</p>
-            </div>
-          )}
-
-          {reportData && !loading && (
-            <div ref={reportRef} className="space-y-8">
-              {/* Report Header */}
-              <div className="bg-gradient-to-br from-teal-600 to-emerald-600 text-white rounded-3xl p-8 shadow-xl shadow-teal-200/60">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-teal-100 text-xs font-bold uppercase tracking-widest mb-1">
-                      Physiotherapy Report
-                    </p>
-                    <h2 className="text-3xl font-black tracking-tight">{reportData.patient.name}</h2>
-                    <p className="text-teal-100 mt-1 text-sm">{reportData.patient.email}</p>
-                  </div>
-                  <div className="text-right text-teal-100 text-sm">
-                    <p className="font-semibold">Generated</p>
-                    <p>{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
-                    {appliedFilters?.startDate && (
-                      <p className="mt-1 text-xs">
-                        {appliedFilters.startDate} → {appliedFilters.endDate || 'now'}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Adherence badge */}
-                <div className="mt-6 flex items-center gap-4 flex-wrap">
-                  <div className="bg-white/20 rounded-2xl px-5 py-3 text-center">
-                    <p className="text-2xl font-black">
-                      {s.adherenceRate != null ? `${s.adherenceRate}%` : '—'}
-                    </p>
-                    <p className="text-xs font-bold text-teal-100 uppercase tracking-wide">Adherence</p>
-                  </div>
-                  <div className="bg-white/20 rounded-2xl px-5 py-3 text-center">
-                    <p className="text-2xl font-black">{s.totalSessions}</p>
-                    <p className="text-xs font-bold text-teal-100 uppercase tracking-wide">Sessions Done</p>
-                  </div>
-                  {s.totalPrescribed > 0 && (
-                    <div className="bg-white/20 rounded-2xl px-5 py-3 text-center">
-                      <p className="text-2xl font-black">{s.totalPrescribed}</p>
-                      <p className="text-xs font-bold text-teal-100 uppercase tracking-wide">Prescribed</p>
-                    </div>
-                  )}
-                  {s.streak > 0 && (
-                    <div className="bg-orange-400/40 rounded-2xl px-5 py-3 text-center">
-                      <p className="text-2xl font-black">🔥 {s.streak}</p>
-                      <p className="text-xs font-bold text-teal-100 uppercase tracking-wide">Day Streak</p>
-                    </div>
-                  )}
-                </div>
+        {reportData && !loading && (
+          <>
+            {/* HERO STATS GRID */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white border rounded-[12px] p-5 shadow-sm">
+                <Activity size={20} className="text-violet-600 mb-3" />
+                <p className="text-3xl font-bold text-slate-900">{s?.totalReps || 0}</p>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-1">Total Reps</p>
               </div>
-
-              {/* Overview Stats */}
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <StatCard
-                  icon={Heart}
-                  label="Avg Heart Rate"
-                  value={s.avgHeartRate ? `${s.avgHeartRate} bpm` : '—'}
-                  color="rose"
-                />
-                <StatCard
-                  icon={Flame}
-                  label="Total Calories"
-                  value={s.totalCalories ? `${s.totalCalories} kcal` : '—'}
-                  color="orange"
-                />
-                <StatCard
-                  icon={Activity}
-                  label="Total Reps"
-                  value={s.totalReps > 0 ? s.totalReps : '—'}
-                  color="violet"
-                />
-                <StatCard
-                  icon={Clock}
-                  label="Total Active Time"
-                  value={fmtDuration(s.totalDurationSec)}
-                  color="blue"
-                />
-                <StatCard
-                  icon={Calendar}
-                  label="Sessions Completed"
-                  value={s.totalSessions}
-                  color="emerald"
-                  sub={s.adherenceRate != null ? `${s.adherenceRate}% adherence rate` : undefined}
-                />
+              <div className="bg-white border rounded-[12px] p-5 shadow-sm">
+                <Clock size={20} className="text-blue-500 mb-3" />
+                <p className="text-3xl font-bold text-slate-900">{fmtDuration(s?.totalDurationSec)}</p>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-1">Active Time</p>
               </div>
+              <div className="bg-white border rounded-[12px] p-5 shadow-sm">
+                <Calendar size={20} className="text-teal-600 mb-3" />
+                <p className="text-3xl font-bold text-slate-900">{s?.totalSessions || 0}</p>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-1">Sessions Done</p>
+              </div>
+              <div className="bg-white border rounded-[12px] p-5 shadow-sm relative overflow-hidden">
+                <div className={`absolute top-0 right-0 w-2 h-full ${s?.adherenceRate >= 80 ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                <Flame size={20} className="text-orange-500 mb-3" />
+                <p className="text-3xl font-bold text-slate-900">{s?.adherenceRate || 0}%</p>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-1">Adherence Rate</p>
+              </div>
+            </div>
 
-              {/* Charts Row */}
-              {reportData.timeline.length > 0 && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Reps Per Session */}
-                  {reportData.timeline.some((t: any) => t.reps > 0) && (
-                    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-                      <h3 className="font-bold text-slate-700 mb-1 flex items-center gap-2">
-                        <Activity size={16} className="text-violet-600" />
-                        Reps Per Session
-                      </h3>
-                      <p className="text-xs text-slate-400 mb-4">Repetitions completed each session</p>
-                      <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={reportData.timeline} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                          <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(d: string) => d.slice(5)} />
-                          <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
-                          <Tooltip
-                            formatter={(v: any) => [v, 'Reps']}
-                            contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 24px rgba(0,0,0,.08)' }}
-                          />
-                          <Bar dataKey="reps" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-
-                  {/* Active Time Per Session */}
-                  {reportData.timeline.some((t: any) => t.durationMin > 0) && (
-                    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-                      <h3 className="font-bold text-slate-700 mb-1 flex items-center gap-2">
-                        <Clock size={16} className="text-blue-500" />
-                        Active Time Per Session
-                      </h3>
-                      <p className="text-xs text-slate-400 mb-4">Minutes spent active each session</p>
-                      <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={reportData.timeline} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                          <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(d: string) => d.slice(5)} />
-                          <YAxis tick={{ fontSize: 10 }} unit="m" />
-                          <Tooltip
-                            formatter={(v: any) => [`${v} min`, 'Duration']}
-                            contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 24px rgba(0,0,0,.08)' }}
-                          />
-                          <Bar dataKey="durationMin" name="Active Time" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Sessions Per Day */}
-              {reportData.sessionsPerDay?.length > 1 && (
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-                  <h3 className="font-bold text-slate-700 mb-1 flex items-center gap-2">
-                    <Calendar size={16} className="text-emerald-600" />
-                    Session Activity
-                  </h3>
-                  <p className="text-xs text-slate-400 mb-4">Sessions completed and active time per day</p>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={reportData.sessionsPerDay} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                      <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(d: string) => d.slice(5)} />
-                      <YAxis yAxisId="left" tick={{ fontSize: 10 }} allowDecimals={false} />
-                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} unit="m" />
-                      <Tooltip
-                        contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 24px rgba(0,0,0,.08)' }}
-                        formatter={(v: any, name: string) => name === 'Sessions' ? [v, name] : [`${v} min`, name]}
-                      />
-                      <Legend iconType="circle" iconSize={8} />
-                      <Bar yAxisId="left" dataKey="sessions" name="Sessions" fill="#10b981" radius={[4, 4, 0, 0]} />
-                      <Bar yAxisId="right" dataKey="totalDurationMin" name="Active Time" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+            {/* CHART GRID */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              
+              {/* Reps Per Session (Bar) */}
+              <div className="bg-white border rounded-[12px] shadow-sm p-6">
+                <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Activity size={18} className="text-violet-600" /> Reps Progression</h3>
+                <div className="h-[250px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={reportData.timeline} margin={{ top: 0, right: 0, left: -25, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748B' }} tickFormatter={(d: string) => d.slice(5)} axisLine={false} tickLine={false} dy={10} />
+                      <YAxis tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} />
+                      <Tooltip cursor={{ fill: '#F8FAFC' }} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                      <Bar dataKey="reps" fill="#8B5CF6" radius={[4, 4, 0, 0]} maxBarSize={40} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-              )}
+              </div>
 
-              {/* Weekly Breakdown + Intensity Zones */}
-              {(reportData.weeklyBreakdown.length > 1 || Object.values(s.intensityZones).some(v => (v as number) > 0)) && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Weekly Sessions & Form */}
-                  {reportData.weeklyBreakdown.length > 1 && (
-                    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-                      <h3 className="font-bold text-slate-700 mb-1 flex items-center gap-2">
-                        <Calendar size={16} className="text-violet-600" />
-                        Weekly Progress
-                      </h3>
-                      <p className="text-xs text-slate-400 mb-4">Sessions and avg form score by week</p>
-                      <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={reportData.weeklyBreakdown} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                          <XAxis dataKey="week" tick={{ fontSize: 10 }} tickFormatter={d => d.slice(5)} />
-                          <YAxis yAxisId="left" tick={{ fontSize: 10 }} />
-                          <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 10 }} />
-                          <Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 24px rgba(0,0,0,.08)' }} />
-                          <Legend iconType="circle" iconSize={8} />
-                          <Bar yAxisId="left" dataKey="sessions" name="Sessions" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                          <Line yAxisId="right" type="monotone" dataKey="avgFormScore" name="Form %" stroke="#14b8a6" strokeWidth={2} dot={{ r: 3 }} />
-                        </BarChart>
+              {/* Active Time (Line) */}
+              <div className="bg-white border rounded-[12px] shadow-sm p-6">
+                <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Clock size={18} className="text-blue-500" /> Active Time Trend</h3>
+                <div className="h-[250px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={reportData.timeline} margin={{ top: 0, right: 0, left: -25, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748B' }} tickFormatter={(d: string) => d.slice(5)} axisLine={false} tickLine={false} dy={10} />
+                      <YAxis tick={{ fontSize: 10, fill: '#64748B' }} unit="m" axisLine={false} tickLine={false} />
+                      <Tooltip contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                      <Line type="monotone" dataKey="durationMin" stroke="#3B82F6" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Exercise Breakdown Pie (if multiple exercises) */}
+              {reportData.exerciseBreakdown?.length > 0 && (
+                <div className="bg-white border rounded-[12px] shadow-sm p-6 lg:col-span-2">
+                  <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Dumbbell size={18} className="text-teal-600" /> Exercise Volume Breakdown</h3>
+                  <div className="flex flex-col md:flex-row items-center gap-8 h-[250px]">
+                    <div className="flex-1 w-full h-full min-w-[200px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={reportData.exerciseBreakdown} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={2} dataKey="totalReps">
+                            {reportData.exerciseBreakdown.map((_: any, i: number) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                          </Pie>
+                          <Tooltip contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                        </PieChart>
                       </ResponsiveContainer>
                     </div>
-                  )}
-
-                  {/* Intensity Zones */}
-                  {Object.values(s.intensityZones).some(v => (v as number) > 0) && (() => {
-                    const zones = [
-                      { name: 'Low', value: Math.round(s.intensityZones.low / 60), color: ZONE_COLORS[0] },
-                      { name: 'Moderate', value: Math.round(s.intensityZones.moderate / 60), color: ZONE_COLORS[1] },
-                      { name: 'High', value: Math.round(s.intensityZones.high / 60), color: ZONE_COLORS[2] },
-                      { name: 'Peak', value: Math.round(s.intensityZones.peak / 60), color: ZONE_COLORS[3] },
-                    ].filter(z => z.value > 0);
-                    return (
-                      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-                        <h3 className="font-bold text-slate-700 mb-1 flex items-center gap-2">
-                          <Zap size={16} className="text-orange-500" />
-                          Intensity Zones
-                        </h3>
-                        <p className="text-xs text-slate-400 mb-4">Time (minutes) spent per heart rate zone</p>
-                        <ResponsiveContainer width="100%" height={220}>
-                          <PieChart>
-                            <Pie data={zones} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={4} dataKey="value">
-                              {zones.map((z, i) => <Cell key={i} fill={z.color} />)}
-                            </Pie>
-                            <Tooltip
-                              formatter={(v: any) => [`${v} min`, 'Duration']}
-                              contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 24px rgba(0,0,0,.08)' }}
-                            />
-                            <Legend iconType="circle" iconSize={8} />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {/* Exercise Breakdown */}
-              {reportData.exerciseBreakdown.length > 0 && (
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-                  <h3 className="font-bold text-slate-700 mb-1 flex items-center gap-2">
-                    <Dumbbell size={16} className="text-teal-600" />
-                    Exercise Breakdown
-                  </h3>
-                  <p className="text-xs text-slate-400 mb-5">Per-exercise performance summary</p>
-                  <div className="space-y-4">
-                    {reportData.exerciseBreakdown.map((ex: any, i: number) => (
-                      <div
-                        key={i}
-                        className="rounded-xl border border-slate-100 bg-slate-50 p-4"
-                        style={{ borderLeft: `4px solid ${CHART_COLORS[i % CHART_COLORS.length]}` }}
-                      >
-                        <div className="flex items-start justify-between flex-wrap gap-2 mb-3">
-                          <div className="flex items-center gap-2">
-                            <div
-                              className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold"
-                              style={{ background: CHART_COLORS[i % CHART_COLORS.length] }}
-                            >
-                              {i + 1}
+                    <div className="flex-1 w-full overflow-y-auto max-h-[220px] space-y-2 pr-2">
+                      {reportData.exerciseBreakdown.map((ex: any, i: number) => (
+                        <div key={i} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-[8px]">
+                          <div className="flex items-center gap-3">
+                            <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
+                            <div>
+                              <p className="text-sm font-bold text-slate-800">{ex.name}</p>
+                              <p className="text-[10px] text-slate-500">{ex.sessions} sessions</p>
                             </div>
-                            <span className="font-bold text-slate-800">{ex.name}</span>
                           </div>
-                          {ex.avgFormScore != null && (
-                            <span className={`text-xs font-bold px-2.5 py-1 rounded-lg ${formColor(ex.avgFormScore)}`}>
-                              {ex.avgFormScore}% form
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-3">
-                          <div>
-                            <p className="text-xs text-slate-400 font-medium">Sessions</p>
-                            <p className="font-bold">{ex.sessions}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-slate-400 font-medium">Total Reps</p>
-                            <p className="font-bold">{ex.totalReps || '—'}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-slate-400 font-medium">Active Time</p>
-                            <p className="font-bold">{fmtDuration(ex.totalDurationSec)}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-slate-400 font-medium">Avg HR</p>
-                            <p className="font-bold">{ex.avgHeartRate ? `${ex.avgHeartRate} bpm` : '—'}</p>
+                          <div className="text-right">
+                            <p className="text-sm font-black text-slate-800">{ex.totalReps} <span className="text-[10px] font-normal text-slate-400">reps</span></p>
+                            <p className="text-[10px] text-slate-500">{fmtDuration(ex.totalDurationSec)} active</p>
                           </div>
                         </div>
-
-                        {ex.topIssues.length > 0 && (
-                          <div>
-                            <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wide mb-1.5">Common Issues</p>
-                            <div className="flex flex-wrap gap-2">
-                              {ex.topIssues.map((issue: any, j: number) => (
-                                <span key={j} className="flex items-center gap-1 text-xs bg-red-50 text-red-600 border border-red-100 px-2.5 py-1 rounded-lg font-semibold">
-                                  <AlertTriangle size={10} />
-                                  {issue.issue} ({issue.count}×)
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-
-              {/* Top Issues + Recommendations */}
-              {reportData.topIssues.length > 0 && (
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-                  <h3 className="font-bold text-slate-700 mb-1 flex items-center gap-2">
-                    <AlertTriangle size={16} className="text-amber-500" />
-                    Top Form Issues & Recommendations
-                  </h3>
-                  <p className="text-xs text-slate-400 mb-5">Most frequently occurring posture problems</p>
-
-                  <div className="space-y-3">
-                    {reportData.topIssues.map((issue: any, i: number) => {
-                      const maxCount = reportData.topIssues[0].count;
-                      const pct = Math.round((issue.count / maxCount) * 100);
-                      return (
-                        <div key={i} className="flex items-center gap-4">
-                          <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-600 text-[10px] font-black flex items-center justify-center shrink-0">
-                            {i + 1}
-                          </span>
-                          <div className="flex-1">
-                            <div className="flex justify-between mb-1">
-                              <span className="text-sm font-semibold text-slate-700 capitalize">{issue.issue}</span>
-                              <span className="text-xs font-bold text-slate-400">{issue.count} sessions</span>
-                            </div>
-                            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                              <div
-                                className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all"
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Auto recommendations */}
-                  <div className="mt-6 space-y-2">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Suggested Focus Areas</p>
-                    {reportData.topIssues.slice(0, 3).map((issue: any, i: number) => (
-                      <div key={i} className="flex items-start gap-2 text-sm text-slate-600">
-                        <CheckCircle2 size={15} className="text-teal-500 mt-0.5 shrink-0" />
-                        <span>
-                          Focus on correcting <span className="font-bold text-slate-800">"{issue.issue}"</span> —
-                          appeared in {issue.count} sessions.
-                        </span>
-                      </div>
-                    ))}
-                    {s.improvementTrend != null && s.improvementTrend < 0 && (
-                      <div className="flex items-start gap-2 text-sm text-slate-600">
-                        <TrendingDown size={15} className="text-red-400 mt-0.5 shrink-0" />
-                        <span>
-                          Form score has <span className="font-bold text-red-500">declined by {Math.abs(s.improvementTrend)} pts</span> recently. Consider reducing exercise intensity or reviewing technique.
-                        </span>
-                      </div>
-                    )}
-                    {s.adherenceRate != null && s.adherenceRate < 70 && (
-                      <div className="flex items-start gap-2 text-sm text-slate-600">
-                        <Calendar size={15} className="text-amber-500 mt-0.5 shrink-0" />
-                        <span>
-                          Adherence is at <span className="font-bold text-amber-600">{s.adherenceRate}%</span>. Follow up with patient on scheduling consistency.
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Empty state */}
-              {reportData.summary.totalSessions === 0 && (
-                <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-12 text-center">
-                  <User size={32} className="mx-auto text-slate-300 mb-3" />
-                  <p className="text-slate-500 font-semibold">No completed sessions found for this filter</p>
-                  <p className="text-slate-400 text-sm mt-1">Try expanding the date range or removing exercise filters</p>
                 </div>
               )}
             </div>
-          )}
-        </div>
+
+            {/* TABULAR LOG */}
+            <div className="bg-white border rounded-[12px] shadow-sm overflow-hidden flex flex-col">
+              <div className="p-5 border-b border-slate-100">
+                <h3 className="font-bold text-slate-800 flex items-center gap-2"><Table2 size={18} className="text-slate-400" /> Detailed Session Log</h3>
+              </div>
+              
+              <div className="overflow-x-auto min-h-[300px]">
+                {tableRows.length === 0 ? (
+                  <div className="p-12 text-center text-slate-400">No session data available in this timeframe.</div>
+                ) : (
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        <th className="py-3 px-6">Date</th>
+                        <th className="py-3 px-6">Reps</th>
+                        <th className="py-3 px-6">Duration (min)</th>
+                        <th className="py-3 px-6">Intensity Proxy</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50 text-sm">
+                      {paginatedRows.map((row: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-slate-50">
+                          <td className="py-3 px-6 font-medium text-slate-700">{row.date}</td>
+                          <td className="py-3 px-6 font-bold text-slate-900">{row.reps}</td>
+                          <td className="py-3 px-6 text-slate-600">{row.durationMin}m</td>
+                          <td className="py-3 px-6">
+                            <div className="flex items-center gap-2">
+                              <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-teal-500 rounded-full" style={{ width: `${Math.min(100, row.reps * 2)}%` }} />
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* Internal Pagination */}
+              {totalPages > 1 && (
+                <div className="p-4 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between text-sm">
+                  <span className="text-slate-500">Page <span className="font-bold text-slate-800">{currentPage}</span> of {totalPages}</span>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-3 py-1.5 bg-white border border-slate-200 rounded text-slate-600 hover:bg-slate-50 disabled:opacity-50">Prev</button>
+                    <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="px-3 py-1.5 bg-white border border-slate-200 rounded text-slate-600 hover:bg-slate-50 disabled:opacity-50">Next</button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+          </>
+        )}
       </main>
     </div>
   );
-};
-
-export default PatientReport;
+}
