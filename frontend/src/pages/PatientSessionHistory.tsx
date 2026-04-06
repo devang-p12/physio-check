@@ -100,73 +100,76 @@ const PatientSessionHistory: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="w-10 h-10 border-4 border-teal-500/30 border-t-teal-500 rounded-full animate-spin" />
+      <div className="flex items-center justify-center py-20">
+        <div className="w-10 h-10 border-4 rounded-full animate-spin" style={{ borderColor: 'var(--p-border)', borderTopColor: 'var(--p-blue)' }} />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans pb-12">
-      {/* Header */}
-      <nav className="bg-white px-6 py-4 flex items-center justify-between sticky top-0 z-30 border-b border-slate-100 shadow-sm">
-        <div className="flex items-center gap-4">
+    <div className="page-content">
+      <main className="max-w-7xl mx-auto py-6">
+        <div className="p-card flex items-center gap-3 mb-6">
           <button
             onClick={() => navigate("/patient")}
-            className="p-2 hover:bg-slate-50 rounded-lg text-slate-500 hover:text-teal-600 transition-colors"
+            className="p-2 rounded-lg transition"
+            style={{ color: 'var(--p-text-secondary)', background: 'var(--p-bg-surface)', border: '1px solid var(--p-border)' }}
           >
             <ChevronLeft size={20} />
           </button>
-          <h1 className="text-xl font-black text-slate-900 tracking-tight">Session History</h1>
+          <h1 className="text-xl font-semibold" style={{ color: 'var(--p-text-primary)' }}>Session History</h1>
         </div>
-      </nav>
-
-      <main className="max-w-7xl mx-auto px-4 py-8">
         
         {/* Search & Stats Bar */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
           <div>
-            <h2 className="text-2xl font-black text-slate-900">Your Activity Logs</h2>
-            <p className="text-slate-500 text-sm mt-1">Review your past sessions and track your progress.</p>
+            <h2 className="text-2xl font-semibold" style={{ color: 'var(--p-text-primary)' }}>Your Activity Logs</h2>
+            <p className="text-sm mt-1" style={{ color: 'var(--p-text-secondary)' }}>Review your past sessions and track your progress.</p>
           </div>
           
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2" size={16} style={{ color: 'var(--p-text-muted)' }} />
             <input 
               type="text" 
               placeholder="Search by exercise name..." 
               value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-              className="pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm w-full md:w-64 shadow-sm"
+              className="pl-9 pr-4 py-2.5 rounded-xl text-sm w-full md:w-64 shadow-sm focus:outline-none"
+              style={{ background: 'var(--p-bg-surface)', border: '1px solid var(--p-border)', color: 'var(--p-text-primary)' }}
             />
           </div>
         </div>
 
         {error ? (
-          <div className="bg-red-50 border border-red-100 rounded-2xl p-6 text-center max-w-2xl mx-auto">
-            <AlertCircle size={32} className="mx-auto text-red-500 mb-2" />
-            <p className="text-red-700 font-bold">{error}</p>
+          <div className="p-card rounded-2xl p-6 text-center max-w-2xl mx-auto"
+            style={{ background: 'var(--p-red-light)', border: '1px solid rgba(230,57,70,0.25)' }}>
+            <AlertCircle size={32} className="mx-auto mb-2" style={{ color: 'var(--p-red)' }} />
+            <p className="font-semibold" style={{ color: 'var(--p-red-dark)' }}>{error}</p>
             <button
               onClick={fetchHistory}
-              className="mt-4 text-sm font-bold bg-white text-red-600 border border-red-200 px-4 py-2 rounded-xl hover:bg-red-50 transition"
+              className="mt-4 text-sm font-semibold px-4 py-2 rounded-xl transition"
+              style={{ background: 'var(--p-bg-surface)', color: 'var(--p-red-dark)', border: '1px solid rgba(230,57,70,0.25)' }}
             >
               Try Again
             </button>
           </div>
         ) : sessions.length === 0 ? (
-          <div className="bg-white border border-slate-100 rounded-3xl p-16 text-center shadow-sm max-w-2xl mx-auto mt-12">
-            <Activity size={48} className="mx-auto text-slate-200 mb-4" />
-            <h3 className="text-xl font-black text-slate-900">No sessions yet</h3>
-            <p className="text-slate-500 mt-2 mb-8">Complete your first exercise session to see your history here.</p>
+          <div className="p-card rounded-3xl p-16 text-center shadow-sm max-w-2xl mx-auto mt-12"
+            style={{ background: 'var(--p-bg-surface)', border: '1px solid var(--p-border)' }}>
+            <Activity size={48} className="mx-auto mb-4" style={{ color: 'var(--p-border)' }} />
+            <h3 className="text-xl font-semibold" style={{ color: 'var(--p-text-primary)' }}>No sessions yet</h3>
+            <p className="mt-2 mb-8" style={{ color: 'var(--p-text-secondary)' }}>Complete your first exercise session to see your history here.</p>
             <button
               onClick={() => navigate("/patient")}
-              className="bg-teal-600 hover:bg-teal-700 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-teal-200 transition-all"
+              className="px-8 py-3 rounded-xl font-semibold transition-all"
+              style={{ background: 'var(--p-navy)', color: 'var(--p-cream)' }}
             >
               Go to Dashboard
             </button>
           </div>
         ) : (
-          <div className="bg-white border border-slate-100 rounded-[2rem] shadow-sm overflow-hidden">
+          <div className="p-card rounded-[2rem] shadow-sm overflow-hidden"
+            style={{ background: 'var(--p-bg-surface)', border: '1px solid var(--p-border)' }}>
             <div className="overflow-x-auto">
                <table className="w-full text-left border-collapse">
                  <thead className="bg-slate-50 border-b border-slate-100">
