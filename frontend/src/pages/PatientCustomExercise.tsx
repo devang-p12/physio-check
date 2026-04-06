@@ -11,6 +11,8 @@ import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
 import { Hands, HAND_CONNECTIONS } from "@mediapipe/hands";
 import type { Results as HandResults } from "@mediapipe/hands";
 import * as faceapi from "face-api.js";
+import { CustomExerciseCounter } from "../exercise-engine/repCounter/customExerciseCounter";
+import type { RawLandmark } from "../exercise-engine/types";
 
 // ───────────────────────────────────────────────────────────────────────────────
 interface NormLandmark { x: number; y: number; z: number; visibility: number; }
@@ -664,6 +666,9 @@ const PatientCustomExercise: React.FC = () => {
   const [displayScore, setDisplayScore] = useState(0);        // smoothed 0–100
   const [matchTier, setMatchTier] = useState<MatchTier>("none");
   const [status, setStatus] = useState("Press Start to begin");
+  const [repCount, setRepCount] = useState(0);
+  const [repMatchScore, setRepMatchScore] = useState(0);
+  const [repFeedback, setRepFeedback] = useState<string>("Waiting for template...");
 
   // ── Posture time tracking ─────────────────────────────────────────────────
   const [correctPostureSecs, setCorrectPostureSecs] = useState(0);
@@ -712,6 +717,8 @@ const PatientCustomExercise: React.FC = () => {
   const templateFramesRef = useRef<NormFrame[]>([]);
   const [currentTargetIdx, setCurrentTargetIdx] = useState(0);
   const refVideoRef = useRef<HTMLVideoElement>(null);
+  const customCounterRef = useRef<CustomExerciseCounter | null>(null);
+  const prevRepCountRef = useRef(0);
 
   const emotionModelLoaded = useRef(false);
   const lastAudioTimeRef   = useRef(0);
@@ -774,6 +781,14 @@ const PatientCustomExercise: React.FC = () => {
           normFrames,
           isPalm ? HAND_LANDMARK_WEIGHTS : LANDMARK_WEIGHTS,
         );
+
+        // Deterministic two-keyframe rep counter (uses first vs last keyframe)
+        customCounterRef.current = new CustomExerciseCounter();
+        customCounterRef.current.initFromTemplate(normFrames);
+        prevRepCountRef.current = 0;
+        setRepCount(0);
+        setRepMatchScore(0);
+        setRepFeedback("Ready");
       } catch (e: any) {
         setError(e.message ?? "Unknown error");
       } finally {
@@ -896,6 +911,22 @@ const PatientCustomExercise: React.FC = () => {
       if (results.poseLandmarks) {
         latestPoseLms = results.poseLandmarks as any[];
         const norm = PoseNormalizer.normalize(results.poseLandmarks as any);
+
+        // Two-keyframe custom rep counter update
+        if (customCounterRef.current) {
+          const raw: RawLandmark[] = (results.poseLandmarks as unknown as Array<{ x: number; y: number; z: number; visibility?: number }>).map(
+            (lm) => ({ x: lm.x, y: lm.y, z: lm.z, visibility: lm.visibility ?? 1 })
+          );
+          const out = customCounterRef.current.updateFromLivePose(raw);
+          setRepCount(out.reps);
+          setRepMatchScore(out.matchScore);
+          setRepFeedback(out.feedback);
+
+          if (out.reps > prevRepCountRef.current) {
+            prevRepCountRef.current = out.reps;
+            playBeep();
+          }
+        }
 
         if (norm && matcherRef.current && (!runHands || !isPalm)) {
           const res = matcherRef.current.processFrame(norm);
@@ -1061,6 +1092,11 @@ const PatientCustomExercise: React.FC = () => {
       setCorrectPostureSecs(0); setTotalSessionSecs(0);
       setDisplayScore(0); setMatchTier("none");
       matcherRef.current?.reset();
+      customCounterRef.current?.reset();
+      prevRepCountRef.current = 0;
+      setRepCount(0);
+      setRepMatchScore(0);
+      setRepFeedback("Ready");
       setPainDetected(false); painReportedRef.current = false;
       setBestStretchDist(null); setStretchDist(0);
       setStrainEmotion(null); setAlignmentCue(null);
@@ -1215,6 +1251,11 @@ const PatientCustomExercise: React.FC = () => {
                   <div className={`text-4xl font-black ${tierColour}`}>{displayScore}%</div>
                   <p className="text-slate-400 text-xs mt-0.5">Weighted Match</p>
                 </div>
+                <div className="border-l border-slate-600 pl-4 text-center">
+                  <div className="text-white font-black text-3xl leading-none">{repCount}</div>
+                  <p className="text-slate-400 text-xs mt-1">Reps</p>
+                  <p className="text-[10px] mt-1 text-slate-500">{repMatchScore}% rep match</p>
+                </div>
                 <div className="border-l border-slate-600 pl-4">
                   <p className="text-white font-semibold text-sm leading-tight">{status}</p>
                   <p className="text-slate-400 text-xs mt-0.5">
@@ -1314,6 +1355,20 @@ const PatientCustomExercise: React.FC = () => {
               <div className="flex items-center gap-2 text-slate-400 text-sm"><Zap size={16} /><span>Live Match Score</span></div>
               <span className={`font-black text-xl ${tierColour}`}>{displayScore}%</span>
             </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-slate-400 text-sm"><Activity size={16} /><span>Reps</span></div>
+              <span className="text-white font-black text-xl font-mono">{repCount}</span>
+            </div>
+            <div className="w-full bg-slate-700 rounded-full h-2">
+              <div
+                className={`h-2 rounded-full transition-all duration-200 ${
+                  repMatchScore >= 75 ? "bg-emerald-400" : repMatchScore >= 55 ? "bg-yellow-400" : "bg-rose-400"
+                }`}
+                style={{ width: `${Math.min(100, Math.max(0, repMatchScore))}%` }}
+              />
+            </div>
+            <p className="text-slate-400 text-xs">{repFeedback}</p>
 
             {template?.exerciseMode === "stretch" && (
               <>
