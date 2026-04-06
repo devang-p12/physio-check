@@ -35,6 +35,7 @@ import DoctorProfile from "./pages/DoctorProfile";
 import PatientProfile from "./pages/PatientProfile";
 import DoctorSettings from "./pages/DoctorSettings";
 import DoctorLayout from "./layouts/DoctorLayout";
+import PatientLayout from "./layouts/PatientLayout";
 import { SocketProvider } from './providers/socket';
 import { PeerProvider } from './providers/PeerProvider'; // Make sure to import this
 
@@ -110,29 +111,22 @@ function App() {
               path="/patient"
               element={
                 <ProtectedRoute role="patient">
-                  <PatientDashboard />
+                  <PatientLayout />
                 </ProtectedRoute>
               }
-            />
+            >
+              <Route index element={<PatientDashboard />} />
+              <Route path="profile" element={<PatientProfile />} />
+              <Route path="history" element={<PatientSessionHistory />} />
+              <Route path="settings" element={<PatientSettings />} />
+              <Route path="doctors" element={<DoctorList />} />
+              <Route path="book/:doctorId" element={<PatientBooking />} />
+              <Route path="chatbot" element={<ChatbotPage />} />
+              <Route path="todays-plan" element={<PatientTodaysPlan />} />
+              <Route path="session/details/:sessionId" element={<SessionDetails />} />
+            </Route>
 
-            <Route
-              path="/patient/profile"
-              element={
-                <ProtectedRoute role="patient">
-                  <PatientProfile />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/patient/session/details/:sessionId"
-              element={
-                <ProtectedRoute role="patient">
-                  <SessionDetails />
-                </ProtectedRoute>
-              }
-            />
-
+            {/* Camera/exercise pages — outside PatientLayout */}
             <Route
               path="/patient/session"
               element={
@@ -141,7 +135,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-
             <Route
               path="/patient/reaction-session"
               element={
@@ -150,66 +143,11 @@ function App() {
                 </ProtectedRoute>
               }
             />
-
-            <Route
-              path="/patient/history"
-              element={
-                <ProtectedRoute role="patient">
-                  <PatientSessionHistory />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/patient/settings"
-              element={
-                <ProtectedRoute role="patient">
-                  <PatientSettings />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/patient/doctors"
-              element={
-                <ProtectedRoute role="patient">
-                  <DoctorList />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/patient/book/:doctorId"
-              element={
-                <ProtectedRoute role="patient">
-                  <PatientBooking />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/patient/chatbot"
-              element={
-                <ProtectedRoute role="patient">
-                  <ChatbotPage />
-                </ProtectedRoute>
-              }
-            />
-
             <Route
               path="/patient/custom-session"
               element={
                 <ProtectedRoute role="patient">
                   <PatientCustomExercise />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/patient/todays-plan"
-              element={
-                <ProtectedRoute role="patient">
-                  <PatientTodaysPlan />
                 </ProtectedRoute>
               }
             />

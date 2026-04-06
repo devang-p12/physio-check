@@ -27,39 +27,55 @@ const PatientTodaysPlan = () => {
   const totalCount = exercises.length;
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans pb-20">
-      <nav className="bg-white px-6 py-4 flex items-center shadow-sm sticky top-0 z-30">
-        <button
-          onClick={() => navigate("/patient")}
-          className="mr-4 p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition"
-        >
-          <ChevronLeft size={20} />
-        </button>
-        <div className="flex flex-col">
-          <span className="font-bold text-slate-900 text-lg">Today's Detailed Plan</span>
-          <span className="text-xs text-slate-500">{completedCount} of {totalCount} completed</span>
+    <div className="page-content">
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div className="p-card flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate("/patient")}
+              className="p-2 rounded-lg transition"
+              style={{ color: 'var(--p-text-secondary)', background: 'var(--p-bg-surface)', border: '1px solid var(--p-border)' }}
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <div>
+              <div className="text-[18px] font-semibold" style={{ color: 'var(--p-text-primary)' }}>
+                Today&apos;s Detailed Plan
+              </div>
+              <div className="text-[12px]" style={{ color: 'var(--p-text-muted)' }}>
+                {completedCount} of {totalCount} completed
+              </div>
+            </div>
+          </div>
         </div>
-      </nav>
 
-      <main className="max-w-7xl mx-auto px-6 lg:px-8 py-8 space-y-6">
         {loading && (
           <div className="space-y-4">
             {[1, 2, 3].map(i => (
-              <div key={i} className="bg-white rounded-2xl p-4 border border-slate-100 animate-pulse h-28" />
+              <div
+                key={i}
+                className="p-card rounded-2xl p-4 animate-pulse h-28"
+                style={{ background: 'var(--p-bg-surface)', border: '1px solid var(--p-border)' }}
+              />
             ))}
           </div>
         )}
 
         {!loading && exercises.length === 0 && (
-          <div className="bg-white rounded-[2rem] p-12 border border-slate-100 shadow-sm text-center mt-12">
-            <div className="w-20 h-20 bg-teal-50 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle2 size={36} className="text-teal-500" />
+          <div
+            className="p-card rounded-[2rem] p-12 text-center mt-12"
+            style={{ background: 'var(--p-bg-surface)', border: '1px solid var(--p-border)' }}
+          >
+            <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4"
+              style={{ background: 'var(--p-bg-active)' }}>
+              <CheckCircle2 size={36} style={{ color: 'var(--p-blue)' }} />
             </div>
-            <p className="text-2xl font-black text-slate-900 tracking-tight">All caught up!</p>
-            <p className="text-slate-500 mt-2">You have completed all your exercises for today or none were assigned.</p>
+            <p className="text-2xl font-black tracking-tight" style={{ color: 'var(--p-text-primary)' }}>All caught up!</p>
+            <p className="mt-2" style={{ color: 'var(--p-text-secondary)' }}>You have completed all your exercises for today or none were assigned.</p>
             <button
               onClick={() => navigate("/patient")}
-              className="mt-6 px-6 py-3 bg-teal-600 text-white font-bold rounded-xl shadow-lg shadow-teal-200 hover:bg-teal-700 transition"
+              className="mt-6 px-6 py-3 rounded-xl font-semibold transition"
+              style={{ background: 'var(--p-navy)', color: 'var(--p-cream)' }}
             >
               Back to Dashboard
             </button>
@@ -67,16 +83,17 @@ const PatientTodaysPlan = () => {
         )}
 
         {(!loading && exercises.length > 0) && (
-          <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+          <div className="p-card rounded-[2rem] overflow-hidden"
+            style={{ background: 'var(--p-bg-surface)', border: '1px solid var(--p-border)' }}>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
-                <thead className="bg-slate-50 border-b border-slate-100">
+                <thead style={{ background: 'var(--p-bg-surface2)', borderBottom: '1px solid var(--p-border)' }}>
                   <tr>
-                    <th className="py-4 px-6 text-[11px] font-black uppercase tracking-widest text-slate-500">Exercise</th>
-                    <th className="py-4 px-6 text-[11px] font-black uppercase tracking-widest text-slate-500 text-center">Prescription</th>
-                    <th className="py-4 px-6 text-[11px] font-black uppercase tracking-widest text-slate-500 text-center">Form Specs</th>
-                    <th className="py-4 px-6 text-[11px] font-black uppercase tracking-widest text-slate-500 text-center">Status</th>
-                    <th className="py-4 px-6 text-[11px] font-black uppercase tracking-widest text-slate-500 text-right">Action</th>
+                    <th className="py-4 px-6 text-[11px] font-black uppercase tracking-widest" style={{ color: 'var(--p-text-muted)' }}>Exercise</th>
+                    <th className="py-4 px-6 text-[11px] font-black uppercase tracking-widest text-center" style={{ color: 'var(--p-text-muted)' }}>Prescription</th>
+                    <th className="py-4 px-6 text-[11px] font-black uppercase tracking-widest text-center" style={{ color: 'var(--p-text-muted)' }}>Form Specs</th>
+                    <th className="py-4 px-6 text-[11px] font-black uppercase tracking-widest text-center" style={{ color: 'var(--p-text-muted)' }}>Status</th>
+                    <th className="py-4 px-6 text-[11px] font-black uppercase tracking-widest text-right" style={{ color: 'var(--p-text-muted)' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
@@ -149,7 +166,7 @@ const PatientTodaysPlan = () => {
             </div>
           </div>
         )}
-      </main>
+      </div>
     </div>
   );
 };

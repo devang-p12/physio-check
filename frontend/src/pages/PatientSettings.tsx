@@ -231,39 +231,33 @@ const PatientSettings: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex items-center justify-center py-20">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2" style={{ borderBottomColor: 'var(--p-blue)' }} />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-              <p className="mt-1 text-sm text-gray-500">
-                Manage your exercise tracking preferences
-              </p>
-            </div>
-            <button
-              onClick={() => navigate('/patient/dashboard')}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-            >
-              Back to Dashboard
-            </button>
+    <div className="page-content">
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="p-card flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-semibold" style={{ color: 'var(--p-text-primary)' }}>Settings</h1>
+            <p className="mt-1 text-sm" style={{ color: 'var(--p-text-secondary)' }}>
+              Manage your exercise tracking preferences
+            </p>
           </div>
+          <button
+            onClick={() => navigate('/patient')}
+            className="px-4 py-2 rounded-lg transition"
+            style={{ background: 'var(--p-bg-surface)', border: '1px solid var(--p-border)', color: 'var(--p-text-secondary)' }}
+          >
+            Back to Dashboard
+          </button>
         </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         
         {/* Google Fit Status Card */}
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="p-card rounded-lg shadow p-6" style={{ background: 'var(--p-bg-surface)', border: '1px solid var(--p-border)' }}>
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold text-gray-900 mb-2">
