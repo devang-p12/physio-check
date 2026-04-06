@@ -463,7 +463,7 @@ const TemplateTester = ({ template, onClose, visible }: TemplateTesterProps) => 
       streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null;
       poseRef.current?.close(); poseRef.current = null;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   // ── start live session ────────────────────────────────────────────────────
   const startTest = useCallback(async () => {
@@ -1216,7 +1216,7 @@ const CreateExercise = () => {
   const activeTestTemplate = template ?? loadedTestTemplate;
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
+    <div className="flex h-[calc(100vh-60px)] bg-slate-50 font-sans overflow-hidden">
 
       {/* ── LEFT — VIDEO PANEL ── */}
       <div className="relative flex-1 bg-slate-900 flex items-center justify-center overflow-hidden">
@@ -1430,13 +1430,6 @@ const CreateExercise = () => {
 
       {/* ── RIGHT — SIDEBAR ── */}
       <div className="w-[420px] flex flex-col bg-white shadow-2xl overflow-y-auto">
-        <nav className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white/80 backdrop-blur-sm sticky top-0 z-10">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-teal-600 rounded-lg flex items-center justify-center shadow-md shadow-teal-200"><Activity size={16} strokeWidth={2.5} className="text-white" /></div>
-            <span className="text-base font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-teal-600 to-emerald-600">PhysioCheck</span>
-          </div>
-          <button onClick={() => navigate(-1)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"><X size={18} /></button>
-        </nav>
 
         <div className="px-6 pt-6 pb-4 border-b border-slate-100">
           <p className="text-xs font-bold text-teal-500 uppercase tracking-widest mb-1">Template Builder</p>

@@ -4,6 +4,7 @@ import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
+import PageLoader from '../components/PageLoader';
 import {
   ArrowLeft, Download, Activity, Heart, Flame, Clock,
   TrendingDown, TrendingUp, Minus, CheckCircle2,
@@ -129,10 +130,12 @@ export default function PatientReport() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] font-sans pb-16">
+    <>
+      <PageLoader visible={loading && !reportData} />
+      <div className="page-content font-sans pb-16">
       
       {/* ── TOP NAV ── */}
-      <nav className="bg-white border-b sticky top-0 z-50">
+      <div className="bg-white border-b sticky top-0 z-50">
         <div className="px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all">
@@ -193,15 +196,9 @@ export default function PatientReport() {
             Generate
           </button>
         </div>
-      </nav>
+      </div>
 
       <main className="max-w-[1400px] mx-auto px-6 py-8 space-y-8">
-        {loading && !reportData && (
-          <div className="flex flex-col items-center justify-center py-32 space-y-4">
-            <div className="w-12 h-12 border-4 border-teal-500/20 border-t-teal-500 rounded-full animate-spin" />
-            <p className="text-slate-400 font-medium">Analyzing performance...</p>
-          </div>
-        )}
 
         {reportData && !loading && (
           <>
@@ -234,7 +231,7 @@ export default function PatientReport() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               
               {/* Reps Per Session (Bar) */}
-              <div className="bg-white border rounded-[12px] shadow-sm p-6">
+              <div className="bg-white border rounded-[12px] shadow-sm p-6 chart-card">
                 <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Activity size={18} className="text-violet-600" /> Reps Progression</h3>
                 <div className="h-[250px]">
                   <ResponsiveContainer width="100%" height="100%">
@@ -243,14 +240,14 @@ export default function PatientReport() {
                       <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748B' }} tickFormatter={(d: string) => d.slice(5)} axisLine={false} tickLine={false} dy={10} />
                       <YAxis tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} />
                       <Tooltip cursor={{ fill: '#F8FAFC' }} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                      <Bar dataKey="reps" fill="#8B5CF6" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                      <Bar dataKey="reps" fill="#8B5CF6" radius={[4, 4, 0, 0]} maxBarSize={40} isAnimationActive={true} animationBegin={0} animationDuration={600} animationEasing="ease-out" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
               {/* Active Time (Line) */}
-              <div className="bg-white border rounded-[12px] shadow-sm p-6">
+              <div className="bg-white border rounded-[12px] shadow-sm p-6 chart-card">
                 <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Clock size={18} className="text-blue-500" /> Active Time Trend</h3>
                 <div className="h-[250px]">
                   <ResponsiveContainer width="100%" height="100%">
@@ -259,7 +256,7 @@ export default function PatientReport() {
                       <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748B' }} tickFormatter={(d: string) => d.slice(5)} axisLine={false} tickLine={false} dy={10} />
                       <YAxis tick={{ fontSize: 10, fill: '#64748B' }} unit="m" axisLine={false} tickLine={false} />
                       <Tooltip contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                      <Line type="monotone" dataKey="durationMin" stroke="#3B82F6" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                      <Line type="monotone" dataKey="durationMin" stroke="#3B82F6" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} isAnimationActive={true} animationBegin={0} animationDuration={700} animationEasing="ease-out" />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -267,13 +264,24 @@ export default function PatientReport() {
 
               {/* Exercise Breakdown Pie (if multiple exercises) */}
               {reportData.exerciseBreakdown?.length > 0 && (
-                <div className="bg-white border rounded-[12px] shadow-sm p-6 lg:col-span-2">
+                <div className="bg-white border rounded-[12px] shadow-sm p-6 lg:col-span-2 chart-card">
                   <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Dumbbell size={18} className="text-teal-600" /> Exercise Volume Breakdown</h3>
                   <div className="flex flex-col md:flex-row items-center gap-8 h-[250px]">
                     <div className="flex-1 w-full h-full min-w-[200px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
-                          <Pie data={reportData.exerciseBreakdown} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={2} dataKey="totalReps">
+                          <Pie 
+                            data={reportData.exerciseBreakdown} 
+                            cx="50%" cy="50%" 
+                            innerRadius={60} 
+                            outerRadius={90} 
+                            paddingAngle={2} 
+                            dataKey="totalReps"
+                            isAnimationActive={true} 
+                            animationBegin={0} 
+                            animationDuration={700} 
+                            animationEasing="ease-out"
+                          >
                             {reportData.exerciseBreakdown.map((_: any, i: number) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                           </Pie>
                           <Tooltip contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
@@ -357,5 +365,6 @@ export default function PatientReport() {
         )}
       </main>
     </div>
+    </>
   );
 }

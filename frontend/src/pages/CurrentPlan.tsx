@@ -4,6 +4,7 @@ import {
   ArrowLeft, Activity, Dumbbell, Calendar, Clock, ChevronLeft, Video, TrendingUp, AlertCircle
 } from 'lucide-react';
 import { BarChart, Bar, ResponsiveContainer, YAxis, Tooltip, Cell, XAxis } from 'recharts';
+import PageLoader from '../components/PageLoader';
 
 export default function CurrentPlan() {
   const { patientId } = useParams<{ patientId: string }>();
@@ -45,39 +46,23 @@ export default function CurrentPlan() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center space-y-4">
-        <div className="w-12 h-12 border-4 border-teal-500/20 border-t-teal-500 rounded-full animate-spin" />
-        <p className="text-slate-500 font-medium">Loading current plan...</p>
-      </div>
-    );
+    return <PageLoader visible={true} />;
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] font-sans pb-16">
-      
-      {/* ── TOP NAV ── */}
-      <nav className="bg-white border-b sticky top-0 z-30 h-16 flex items-center px-6">
-        <div className="max-w-6xl mx-auto w-full flex items-center justify-between">
-          <div className="flex items-center gap-4 text-sm font-medium">
-            <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-slate-500 hover:text-teal-600 transition-colors">
-              <ChevronLeft size={16} /> Back to Profile
-            </button>
-            <div className="w-px h-4 bg-slate-200" />
-            <span className="text-slate-400">Current Plan</span>
-            <span className="text-slate-300">/</span>
-            <span className="text-slate-800 font-bold">{patient?.name || 'Patient'}</span>
-          </div>
-          <button onClick={() => navigate(`/doctor/assign?patientId=${patientId}`)} className="bg-slate-900 text-white px-4 py-2 rounded-[8px] text-sm font-semibold hover:bg-slate-800 transition">
-            Modify Plan
-          </button>
-        </div>
-      </nav>
+    <>
+      <PageLoader visible={loading} />
+      <div className="page-content font-sans pb-16">
 
       {/* ── HEADER ── */}
-      <header className="max-w-6xl mx-auto px-6 py-8">
-        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Assigned Routine</h1>
-        <p className="text-slate-500 mt-2">Active exercises currently prescribed to {patient?.name || 'this patient'}.</p>
+      <header className="max-w-6xl mx-auto px-6 py-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Assigned Routine</h1>
+          <p className="text-slate-500 mt-2">Active exercises currently prescribed to {patient?.name || 'this patient'}.</p>
+        </div>
+        <button onClick={() => navigate(`/doctor/assign?patientId=${patientId}`)} className="bg-slate-900 text-white px-4 py-2 rounded-[8px] text-sm font-semibold hover:bg-slate-800 transition">
+          Modify Plan
+        </button>
       </header>
 
       <main className="max-w-6xl mx-auto px-6">
@@ -137,8 +122,8 @@ export default function CurrentPlan() {
                         <YAxis hide domain={[0, 'dataMax']} />
                         <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94A3B8' }} dy={10} />
                         <Tooltip cursor={{ fill: '#F1F5F9' }} contentStyle={{ borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '12px', padding: '4px 8px' }} formatter={(v: any) => [`${v} reps`, 'Completed']} />
-                        <Bar dataKey="reps" radius={[4, 4, 0, 0]}>
-                          {repsData.map((d, i) => <Cell key={i} fill={d.reps > 0 ? (compliance >= 80 ? '#10B981' : '#F59E0B') : '#E2E8F0'} />)}
+                        <Bar dataKey="reps" radius={[4, 4, 0, 0]} isAnimationActive={true} animationBegin={0} animationDuration={600} animationEasing="ease-out">
+                          {repsData.map((d, i) => <Cell key={i} fill={d.reps > 0 ? (compliance >= 80 ? 'var(--success)' : 'var(--warning)') : 'var(--border-default)'} />)}
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
@@ -193,5 +178,6 @@ export default function CurrentPlan() {
         </div>
       </main>
     </div>
+    </>
   );
 }

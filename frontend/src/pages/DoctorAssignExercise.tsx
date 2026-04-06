@@ -211,7 +211,7 @@ const AssignExercise = () => {
   if (!patient) return null;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] font-sans pb-12">
+    <div className="page-content font-sans pb-12">
       <header className="bg-white border-b sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-4">

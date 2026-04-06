@@ -25,13 +25,7 @@ const DoctorProfile = () => {
   if (!docData) return null;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] font-sans pb-12">
-      <nav className="bg-white px-6 h-16 flex items-center border-b border-slate-100 sticky top-0 z-30 shadow-sm">
-        <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-slate-500 hover:text-teal-600 transition-colors">
-          <ArrowLeft size={20} />
-        </button>
-        <h1 className="text-lg font-bold text-slate-900 ml-4">My Clinical Profile</h1>
-      </nav>
+    <div className="page-content font-sans pb-12">
 
       <main className="max-w-4xl mx-auto px-6 py-12">
          {/* Clinical Card */}

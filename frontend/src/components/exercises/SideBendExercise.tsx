@@ -45,7 +45,7 @@ const SideBendExercise: React.FC<ExerciseProps> = ({ onRepComplete, onSessionEnd
 
       // Calculate tilt angle using atan2
       const tiltAngleRad = Math.atan2(shoulderMid.x - hipMid.x, hipMid.y - shoulderMid.y);
-      let tiltAngle = tiltAngleRad * 180 / Math.PI;
+      const tiltAngle = tiltAngleRad * 180 / Math.PI;
       // Convert to strict -deg to +deg relative to vertical
       setCurrentAngle(Math.round(Math.abs(tiltAngle)));
 
