@@ -178,21 +178,7 @@ const DoctorCalendar = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] font-sans pb-16">
-      
-      {/* ── TOP NAV ── */}
-      <nav className="bg-white border-b sticky top-0 z-30 h-16 flex items-center px-6">
-        <div className="max-w-7xl mx-auto w-full flex items-center gap-4 text-sm font-medium">
-          <Link to="/doctor" className="flex items-center gap-1.5 text-slate-500 hover:text-teal-600 transition-colors">
-            <ChevronLeft size={16} /> Back to Dashboard
-          </Link>
-          <div className="w-px h-4 bg-slate-200" />
-          <span className="text-slate-400">Dashboard</span>
-          <span className="text-slate-300">/</span>
-          <span className="text-slate-800 font-bold">Calendar</span>
-        </div>
-      </nav>
-
+    <div className="page-content font-sans pb-16">
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
 
         {/* ── SECTION 1: SET AVAILABILITY ── */}

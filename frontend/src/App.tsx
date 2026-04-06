@@ -33,6 +33,8 @@ import DoctorPatientDirectory from "./pages/DoctorPatientDirectory";
 import CurrentPlan from "./pages/CurrentPlan";
 import DoctorProfile from "./pages/DoctorProfile";
 import PatientProfile from "./pages/PatientProfile";
+import DoctorSettings from "./pages/DoctorSettings";
+import DoctorLayout from "./layouts/DoctorLayout";
 import { SocketProvider } from './providers/socket';
 import { PeerProvider } from './providers/PeerProvider'; // Make sure to import this
 
@@ -87,113 +89,21 @@ function App() {
             />
 
             {/* DOCTOR ROUTES */}
-            <Route
-              path="/doctor"
-              element={
-                <ProtectedRoute role="doctor">
-                  <DoctorDashboard />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/doctor/assign"
-              element={
-                <ProtectedRoute role="doctor">
-                  <AssignExercise />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/doctor/profile"
-              element={
-                <ProtectedRoute role="doctor">
-                  <DoctorProfile />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/doctor/add-patient"
-              element={
-                <ProtectedRoute role="doctor">
-                  <AddPatient />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/doctor/patient/:patientId"
-              element={
-                <ProtectedRoute role="doctor">
-                  <DoctorPatientMonitoring />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/doctor/session/:sessionId"
-              element={
-                <ProtectedRoute role="doctor">
-                  <SessionDetails />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/doctor/patient/:patientId/report"
-              element={
-                <ProtectedRoute role="doctor">
-                  <PatientReport />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/doctor/calendar"
-              element={
-                <ProtectedRoute role="doctor">
-                  <DoctorCalendar />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/doctor/today"
-              element={
-                <ProtectedRoute role="doctor">
-                  <DoctorTodaysAssignments />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/doctor/create-exercise"
-              element={
-                <ProtectedRoute role="doctor">
-                  <CreateExercise />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/doctor/patients"
-              element={
-                <ProtectedRoute role="doctor">
-                  <DoctorPatientDirectory />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/doctor/patient/:patientId/plan"
-              element={
-                <ProtectedRoute role="doctor">
-                  <CurrentPlan />
-                </ProtectedRoute>
-              }
-            />
+            <Route path="/doctor" element={<DoctorLayout />}>
+              <Route index element={<ProtectedRoute role="doctor"><DoctorDashboard /></ProtectedRoute>} />
+              <Route path="assign" element={<ProtectedRoute role="doctor"><AssignExercise /></ProtectedRoute>} />
+              <Route path="profile" element={<ProtectedRoute role="doctor"><DoctorProfile /></ProtectedRoute>} />
+              <Route path="add-patient" element={<ProtectedRoute role="doctor"><AddPatient /></ProtectedRoute>} />
+              <Route path="patient/:patientId" element={<ProtectedRoute role="doctor"><DoctorPatientMonitoring /></ProtectedRoute>} />
+              <Route path="session/:sessionId" element={<ProtectedRoute role="doctor"><SessionDetails /></ProtectedRoute>} />
+              <Route path="patient/:patientId/report" element={<ProtectedRoute role="doctor"><PatientReport /></ProtectedRoute>} />
+              <Route path="calendar" element={<ProtectedRoute role="doctor"><DoctorCalendar /></ProtectedRoute>} />
+              <Route path="today" element={<ProtectedRoute role="doctor"><DoctorTodaysAssignments /></ProtectedRoute>} />
+              <Route path="create-exercise" element={<ProtectedRoute role="doctor"><CreateExercise /></ProtectedRoute>} />
+              <Route path="patients" element={<ProtectedRoute role="doctor"><DoctorPatientDirectory /></ProtectedRoute>} />
+              <Route path="patient/:patientId/plan" element={<ProtectedRoute role="doctor"><CurrentPlan /></ProtectedRoute>} />
+              <Route path="settings" element={<ProtectedRoute role="doctor"><DoctorSettings /></ProtectedRoute>} />
+            </Route>
 
             {/* PATIENT ROUTES */}
             <Route

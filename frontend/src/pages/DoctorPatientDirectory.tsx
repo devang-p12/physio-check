@@ -113,7 +113,7 @@ const DoctorPatientDirectory = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] font-sans pb-16">
+    <div className="page-content font-sans pb-16">
       
       {/* ── HEADER ROW ── */}
       <header className="bg-white border-b sticky top-0 z-30">

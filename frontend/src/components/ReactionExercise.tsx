@@ -115,7 +115,7 @@ export default function ReactionExercise({
           ctx.beginPath(); ctx.arc(cx, cy, r * 1.3, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill()
           ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2)
           ctx.fillStyle = 'rgba(59,130,246,0.85)'; ctx.fill()
-          ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 3; ctx.stroke()
+          ctx.strokeStyle = '#B08070'; ctx.lineWidth = 3; ctx.stroke()
           ctx.fillStyle = 'rgba(255,255,255,0.9)'
           ctx.font = `bold ${Math.round(r * 1.2)}px sans-serif`
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
