@@ -100,12 +100,12 @@ const DoctorDashboard = () => {
   const paginatedAppts = recentAppointments.slice(apptPage * itemsPerPage, (apptPage + 1) * itemsPerPage);
 
   const StatCard = ({ icon: Icon, value, label, color }: any) => (
-    <div className="bg-white dark:bg-[#FFFFFF] rounded-xl border border-slate-200 dark:border-[#F4C4B0] p-4 shadow-sm hover:-translate-y-0.5 hover:border-[#F8AD9D] transition-all duration-180 chart-card">
-      <div className="w-10 h-10 rounded-full flex items-center justify-center mb-3" style={{ background: `rgba(240, 128, 128, 0.15)` }}>
-        <Icon size={20} style={{ color: `var(${color})` }} />
+    <div className="bg-white dark:bg-[#FFFFFF] rounded-xl border p-4 shadow-sm transition-all duration-180 chart-card" style={{ borderColor: 'var(--border-default)', borderRadius: '10px' }}>
+      <div className="w-10 h-10 rounded-full flex items-center justify-center mb-3" style={{ background: '#A8DADC', color: '#1D3557' }}>
+        <Icon size={20} />
       </div>
-      <p className="text-2xl font-semibold inline-block" style={{ color: '#2D1810' }}>{value}</p>
-      <p className="text-[12px] uppercase tracking-widest mt-1" style={{ color: '#B08070' }}>{label}</p>
+      <p className="text-2xl inline-block" style={{ color: '#1D3557', fontWeight: 700 }}>{value}</p>
+      <p className="text-[12px] uppercase tracking-widest mt-1" style={{ color: '#7AAFC2' }}>{label}</p>
     </div>
   );
 
@@ -118,16 +118,17 @@ const DoctorDashboard = () => {
             
             {/* ROW 1: Welcome Banner */}
             <div 
-              className="p-6 rounded-lg shadow-sm border"
+              className="p-6 shadow-sm"
               style={{ 
-                background: 'linear-gradient(135deg, #FFDAB9 0%, #FFF8F5 100%)',
-                borderColor: '#F4C4B0'
+                background: 'linear-gradient(135deg, #1D3557 0%, #457B9D 100%)',
+                border: 'none',
+                borderRadius: '12px'
               }}
             >
-              <h1 className="text-2xl font-semibold mb-1" style={{ color: '#2D1810' }}>
+              <h1 className="text-2xl font-semibold mb-1" style={{ color: '#F1FAEE' }}>
                 {greeting()}, Dr. {doctorName}
               </h1>
-              <p className="text-sm" style={{ color: '#B08070' }}>
+              <p className="text-sm" style={{ color: '#A8DADC' }}>
                 {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
               </p>
             </div>
@@ -155,10 +156,10 @@ const DoctorDashboard = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               
               {/* COLUMN A: Patient Activity Feed */}
-              <div className="bg-white dark:bg-[#FFFFFF] border border-slate-200 dark:border-[#F4C4B0] rounded-xl p-4 shadow-sm flex flex-col chart-card max-h-[340px]">
+              <div className="bg-white border p-4 shadow-sm flex flex-col chart-card max-h-[340px]" style={{ background: '#FFFFFF', borderColor: '#C8DFE8', borderRadius: '10px' }}>
                 <div className="flex items-center gap-1.5 mb-4 px-1">
-                  <Activity size={16} style={{ color: 'var(--accent)' }} />
-                  <h2 className="text-[13px] font-medium text-slate-900 dark:text-[#2D1810]">Patient Activity</h2>
+                  <Activity size={16} color="#A8DADC" />
+                  <h2 className="text-[13px]" style={{ color: '#1D3557', fontWeight: 600 }}>Patient Activity</h2>
                 </div>
                 <div className="overflow-y-auto flex-1 custom-scrollbar pr-2 space-y-0">
                   {loading ? (
@@ -171,37 +172,37 @@ const DoctorDashboard = () => {
                     <p className="text-sm text-slate-400 p-4">No recent activity.</p>
                   ) : (
                     paginatedActivity.map((feed) => (
-                      <div key={feed.id} className="flex items-center gap-3 py-3 border-b border-slate-100 dark:border-[#FFF2EC] last:border-0">
+                      <div key={feed.id} className="flex items-center gap-3 py-3 border-b last:border-0" style={{ borderColor: '#C8DFE8' }}>
                         <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0" 
-                             style={{ background: 'var(--accent-light)', color: 'var(--accent-text)' }}>
+                             style={{ background: '#A8DADC', color: '#1D3557' }}>
                           {feed.name.charAt(0)}
                         </div>
                         <div className="flex-1 min-w-0 flex justify-between items-center gap-2 text-[13px]">
                            <div>
-                             <span className="font-medium text-slate-900 dark:text-[#2D1810]">{feed.name}</span>
+                             <span className="font-medium" style={{ color: '#1D3557', fontWeight: 600 }}>{feed.name}</span>
                              {' '}
-                             <span className="text-slate-500 dark:text-[#7A4A3C] text-[12px]">{feed.action}</span>
+                             <span className="text-[12px]" style={{ color: '#457B9D' }}>{feed.action}</span>
                            </div>
-                           <span className="text-[11px] text-slate-400 dark:text-[#B08070] shrink-0 text-right">{feed.time}</span>
+                           <span className="text-[11px] shrink-0 text-right" style={{ color: '#7AAFC2' }}>{feed.time}</span>
                         </div>
                       </div>
                     ))
                   )}
                 </div>
-                <div className="mt-3 flex justify-between items-center pt-3 border-t border-slate-100 dark:border-[#FFF2EC]">
-                   <span className="text-[11px] text-slate-500">Showing {Math.min(activityPage * itemsPerPage + 1, activityCount)}–{Math.min((activityPage + 1) * itemsPerPage, activityCount)} of {activityCount}</span>
+                <div className="mt-3 flex justify-between items-center pt-3 border-t" style={{ borderColor: '#C8DFE8' }}>
+                   <span className="text-[11px]" style={{ color: '#7AAFC2' }}>Showing {Math.min(activityPage * itemsPerPage + 1, activityCount)}–{Math.min((activityPage + 1) * itemsPerPage, activityCount)} of {activityCount}</span>
                    <div className="flex items-center gap-1">
-                      <button onClick={() => setActivityPage(Math.max(0, activityPage - 1))} disabled={activityPage === 0} className="p-1 rounded text-slate-500 hover:bg-slate-50 dark:hover:bg-[#FFF0E8] disabled:opacity-50"><ChevronLeft size={16} /></button>
-                      <button onClick={() => setActivityPage((activityPage + 1) * itemsPerPage < activityCount ? activityPage + 1 : activityPage)} disabled={(activityPage + 1) * itemsPerPage >= activityCount} className="p-1 rounded text-slate-500 hover:bg-slate-50 dark:hover:bg-[#FFF0E8] disabled:opacity-50"><ChevronRight size={16} /></button>
+                      <button onClick={() => setActivityPage(Math.max(0, activityPage - 1))} disabled={activityPage === 0} className="p-1 rounded disabled:opacity-50" style={{ color: '#457B9D' }}><ChevronLeft size={16} /></button>
+                      <button onClick={() => setActivityPage((activityPage + 1) * itemsPerPage < activityCount ? activityPage + 1 : activityPage)} disabled={(activityPage + 1) * itemsPerPage >= activityCount} className="p-1 rounded disabled:opacity-50" style={{ color: '#457B9D' }}><ChevronRight size={16} /></button>
                    </div>
                 </div>
               </div>
 
               {/* COLUMN B: Upcoming Appointments */}
-              <div className="bg-white dark:bg-[#FFFFFF] border border-slate-200 dark:border-[#F4C4B0] rounded-xl p-4 shadow-sm flex flex-col chart-card max-h-[340px]">
+              <div className="bg-white border p-4 shadow-sm flex flex-col chart-card max-h-[340px]" style={{ background: '#FFFFFF', borderColor: '#C8DFE8', borderRadius: '10px' }}>
                 <div className="flex items-center gap-1.5 mb-4 px-1">
-                  <CalendarClock size={16} style={{ color: 'var(--accent)' }} />
-                  <h2 className="text-[13px] font-medium text-slate-900 dark:text-[#2D1810]">Upcoming Appointments</h2>
+                  <CalendarClock size={16} color="#A8DADC" />
+                  <h2 className="text-[13px]" style={{ color: '#1D3557', fontWeight: 600 }}>Upcoming Appointments</h2>
                 </div>
                 <div className="overflow-y-auto flex-1 custom-scrollbar pr-2 space-y-0">
                    {loading ? (
@@ -214,32 +215,32 @@ const DoctorDashboard = () => {
                      <p className="text-sm text-slate-400 p-4">No upcoming appointments scheduled.</p>
                    ) : (
                      paginatedAppts.map(a => (
-                      <div key={a._id} className="flex items-center gap-3 py-3 border-b border-slate-100 dark:border-[#FFF2EC] last:border-0">
+                      <div key={a._id} className="flex items-center gap-3 py-3 border-b last:border-0" style={{ borderColor: '#C8DFE8' }}>
                          {/* Time block */}
-                         <div className="w-12 h-12 rounded-lg flex flex-col items-center justify-center shrink-0" style={{ background: 'var(--accent)', color: 'white' }}>
+                         <div className="w-12 h-12 rounded-lg flex flex-col items-center justify-center shrink-0" style={{ background: '#A8DADC', color: '#1D3557' }}>
                             <span className="text-[14px] font-bold leading-none">{new Date(a.startTime).toLocaleTimeString([], { hour: '2-digit', hour12: true }).replace(/ AM| PM/i, '')}</span>
                             <span className="text-[10px] uppercase font-medium">{new Date(a.startTime).toLocaleTimeString([], { hour12: true }).slice(-2)}</span>
                          </div>
                          <div className="flex-1 min-w-0">
-                           <p className="text-[13px] font-medium text-slate-900 dark:text-[#2D1810] truncate">{a.patientId?.name || "Unknown Patient"}</p>
-                           <p className="text-[12px] text-slate-500 dark:text-[#7A4A3C] truncate capitalize">{a.sessionMode} Session</p>
+                           <p className="text-[13px] font-medium truncate" style={{ color: '#1D3557', fontWeight: 600 }}>{a.patientId?.name || "Unknown Patient"}</p>
+                           <p className="text-[12px] truncate capitalize" style={{ color: '#457B9D' }}>{a.sessionMode} Session</p>
                          </div>
                          <div className="shrink-0">
                             {a.sessionMode === 'online' ? (
-                              <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-teal-50 text-teal-600 dark:bg-teal-900 dark:text-teal-300 capitalize" style={{ background: 'var(--accent-light)', color: 'var(--accent-text)' }}>Online</span>
+                              <span className="px-2.5 py-1 rounded-full text-[11px] font-medium capitalize" style={{ background: '#A8DADC', color: '#1D3557' }}>Online</span>
                             ) : (
-                              <span className="px-2.5 py-1 rounded-full text-[11px] font-medium border border-slate-200 dark:border-[#F4C4B0] text-slate-600 dark:text-slate-300 capitalize">In-Person</span>
+                              <span className="px-2.5 py-1 rounded-full text-[11px] font-medium capitalize" style={{ background: 'transparent', color: '#457B9D', border: '1px solid #457B9D' }}>In-Person</span>
                             )}
                          </div>
                        </div>
                      ))
                    )}
                 </div>
-                <div className="mt-3 flex justify-between items-center pt-3 border-t border-slate-100 dark:border-[#FFF2EC]">
-                   <span className="text-[11px] text-slate-500">Showing {Math.min(apptPage * itemsPerPage + 1, apptCount)}–{Math.min((apptPage + 1) * itemsPerPage, apptCount)} of {apptCount}</span>
+                <div className="mt-3 flex justify-between items-center pt-3 border-t" style={{ borderColor: '#C8DFE8' }}>
+                   <span className="text-[11px]" style={{ color: '#7AAFC2' }}>Showing {Math.min(apptPage * itemsPerPage + 1, apptCount)}–{Math.min((apptPage + 1) * itemsPerPage, apptCount)} of {apptCount}</span>
                    <div className="flex items-center gap-1">
-                      <button onClick={() => setApptPage(Math.max(0, apptPage - 1))} disabled={apptPage === 0} className="p-1 rounded text-slate-500 hover:bg-slate-50 dark:hover:bg-[#FFF0E8] disabled:opacity-50"><ChevronLeft size={16} /></button>
-                      <button onClick={() => setApptPage((apptPage + 1) * itemsPerPage < apptCount ? apptPage + 1 : apptPage)} disabled={(apptPage + 1) * itemsPerPage >= apptCount} className="p-1 rounded text-slate-500 hover:bg-slate-50 dark:hover:bg-[#FFF0E8] disabled:opacity-50"><ChevronRight size={16} /></button>
+                      <button onClick={() => setApptPage(Math.max(0, apptPage - 1))} disabled={apptPage === 0} className="p-1 rounded disabled:opacity-50" style={{ color: '#457B9D' }}><ChevronLeft size={16} /></button>
+                      <button onClick={() => setApptPage((apptPage + 1) * itemsPerPage < apptCount ? apptPage + 1 : apptPage)} disabled={(apptPage + 1) * itemsPerPage >= apptCount} className="p-1 rounded disabled:opacity-50" style={{ color: '#457B9D' }}><ChevronRight size={16} /></button>
                    </div>
                 </div>
               </div>

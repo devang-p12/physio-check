@@ -7,11 +7,12 @@ import RightStatsSidebar from './RightStatsSidebar';
 
 function BackgroundBlobs() {
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none', background: 'var(--bg-page)' }}>
-      <div style={{ position: 'absolute', top: '-10%', left: '-10%', width: '50vw', height: '50vw', background: 'var(--blob-1)', filter: 'blur(80px)', borderRadius: '50%', animation: 'blobDrift1 22s ease-in-out infinite alternate' }} />
-      <div style={{ position: 'absolute', top: '20%', right: '-20%', width: '60vw', height: '60vw', background: 'var(--blob-2)', filter: 'blur(100px)', borderRadius: '50%', animation: 'blobDrift2 26s ease-in-out infinite alternate' }} />
-      <div style={{ position: 'absolute', bottom: '-20%', left: '10%', width: '40vw', height: '40vw', background: 'var(--blob-3)', filter: 'blur(60px)', borderRadius: '50%', animation: 'blobDrift3 18s ease-in-out infinite alternate' }} />
-    </div>
+    <>
+      <div className="d-grad-mesh" />
+      <div className="d-blob-1" />
+      <div className="d-blob-2" />
+      <div className="d-blob-3" />
+    </>
   )
 }
 

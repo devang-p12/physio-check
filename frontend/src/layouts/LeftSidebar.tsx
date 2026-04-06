@@ -23,8 +23,8 @@ export default function LeftSidebar({ collapsed }: LeftSidebarProps) {
     <aside 
       className={`left-sidebar ${collapsed ? 'collapsed' : ''}`}
       style={{ 
-        background: 'var(--bg-sidebar)', 
-        borderRight: '1px solid var(--border-default)',
+        background: 'var(--d-bg-sidebar)', 
+        borderRight: '1px solid #2E5470',
         zIndex: 40
       }}
     >
@@ -70,10 +70,10 @@ export default function LeftSidebar({ collapsed }: LeftSidebarProps) {
           />
           {!collapsed && (
             <div className="flex flex-col min-w-0">
-              <span className="text-[13px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+              <span className="text-[13px] font-medium truncate" style={{ color: 'var(--d-accent-cream)' }}>
                 Dr. {doctorName}
               </span>
-              <span className="text-[11px] truncate" style={{ color: 'var(--text-secondary)' }}>
+              <span className="text-[11px] truncate" style={{ color: 'rgba(241, 250, 238, 0.65)' }}>
                 {specialization}
               </span>
             </div>

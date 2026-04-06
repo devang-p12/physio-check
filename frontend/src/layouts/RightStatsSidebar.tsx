@@ -3,14 +3,11 @@ import { AreaChart, Area, PieChart, Pie, Cell, BarChart, Bar, ResponsiveContaine
 import { TrendingUp, PieChart as PieChartIcon, BarChart2, CalendarDays } from 'lucide-react';
 import { apiFetch } from '../api';
 
-const PC_PALETTE = {
-  accent: '#F08080',
-  accentLight: '#FFDAB9',
-  pc200: '#FBC4AB',
-  pc300: '#F8AD9D',
-  pc400: '#F4978E',
-  pc500: '#F08080',
-  pc600: '#D4645E',
+const D_COLORS = {
+  navy: '#1D3557',
+  blue: '#457B9D',
+  mint: '#A8DADC',
+  red: '#E63946',
 };
 
 export default function RightStatsSidebar() {
@@ -65,9 +62,9 @@ export default function RightStatsSidebar() {
   if (patients.length === 0) { onTrack = 1; }
 
   const recoveryData = [
-    { name: 'On Track', value: onTrack, color: PC_PALETTE.pc200 },
-    { name: 'Needs Attention', value: needsAttention, color: PC_PALETTE.pc400 },
-    { name: 'Critical', value: critical, color: PC_PALETTE.pc600 }
+    { name: 'On Track', value: onTrack, color: D_COLORS.mint },
+    { name: 'Needs Attention', value: needsAttention, color: D_COLORS.blue },
+    { name: 'Critical', value: critical, color: D_COLORS.red }
   ];
 
   // Weekly Session Volume Bar Chart mapping
@@ -90,15 +87,28 @@ export default function RightStatsSidebar() {
     <aside 
       className="fixed right-0 top-[60px] w-[280px] h-[calc(100vh-60px)] overflow-y-auto z-40 p-4 space-y-4"
       style={{
-         background: 'var(--bg-sidebar)',
-         borderLeft: '1px solid var(--border-default)'
+         background: 'var(--d-bg-sidebar)',
+         borderLeft: '1px solid #2E5470'
       }}
     >
       
       {/* 1. Adherence Overview */}
-      <div className="bg-white dark:bg-[#FFFFFF] border border-slate-200 dark:border-[#F4C4B0] rounded-xl p-3.5 shadow-sm chart-card">
-        <h2 className="text-[13px] font-medium text-slate-900 dark:text-[#2D1810] mb-3 flex items-center gap-1.5">
-          <TrendingUp size={14} style={{ color: 'var(--accent)' }} /> Adherence
+      <div
+        className="chart-card"
+        style={{
+          background: 'rgba(255, 255, 255, 0.82)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          border: '1px solid rgba(168, 218, 220, 0.45)',
+          borderRadius: 16,
+          boxShadow: 'var(--d-shadow-card)',
+          position: 'relative',
+          zIndex: 1,
+          padding: 14,
+        }}
+      >
+        <h2 className="text-[13px] font-semibold mb-3 flex items-center gap-1.5" style={{ color: 'var(--d-text-primary)' }}>
+          <TrendingUp size={14} style={{ color: 'var(--d-accent-blue)' }} /> Adherence
         </h2>
         <div className="h-[120px]">
           <ResponsiveContainer width="100%" height="100%">
@@ -108,10 +118,10 @@ export default function RightStatsSidebar() {
               <Area 
                 type="monotone" 
                 dataKey="adherence" 
-                stroke="var(--accent)" 
+                stroke={D_COLORS.blue}
                 strokeWidth={2.5} 
                 fillOpacity={0.4} 
-                fill="var(--accent-light)" 
+                fill={D_COLORS.mint}
                 isAnimationActive={true} 
                 animationBegin={0} 
                 animationDuration={700} 
