@@ -45,7 +45,7 @@ const PatientSessionHistory: React.FC = () => {
 
   useEffect(() => {
     fetchHistory();
-  }, []);
+  }, []); 
 
   const fetchHistory = async () => {
     setLoading(true);

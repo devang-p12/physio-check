@@ -4,7 +4,8 @@ import {
   completeSession,
   getActive,
   getSessionHistory,
-  getSessionAnalytics
+  getSessionAnalytics,
+  getPatientHistoryForDoctor
 } from '../controllers/session.controller.js';
 import { auth } from '../middleware/auth.middleware.js';
 import { patientOnly } from '../middleware/role.middleware.js';
@@ -22,6 +23,8 @@ router.get('/active', auth, patientOnly, getActive);
 
 // Get session history
 router.get('/history', auth, patientOnly, getSessionHistory);
+
+router.get('/doctor/patient/:patientId/history', auth, getPatientHistoryForDoctor);
 
 // Get session analytics — accessible by both patient (own session) and doctor
 router.get('/:sessionId/analytics', auth, getSessionAnalytics);
