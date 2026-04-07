@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Watch, AlertCircle, CheckCircle, XCircle, RefreshCw, Moon } from 'lucide-react';
+import { Watch, AlertCircle, CheckCircle, XCircle, RefreshCw, Moon, Settings, ChevronLeft, Activity, Wifi, WifiOff, Shield } from 'lucide-react';
 
 interface Settings {
   smartwatchEnabled: boolean;
@@ -26,6 +26,19 @@ interface ErrorModal {
   message: string;
 }
 
+/* ── Branded Toggle Component ── */
+const Toggle = ({ enabled, onToggle, disabled = false }: { enabled: boolean; onToggle: () => void; disabled?: boolean }) => (
+  <button
+    onClick={onToggle}
+    disabled={disabled}
+    className={`relative inline-flex h-7 w-12 items-center rounded-full transition-all duration-300 focus:outline-none ${
+      enabled ? 'bg-[#457B9D] shadow-md shadow-[#457B9D]/30' : 'bg-[#1D3557]/10'
+    } ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+  >
+    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform duration-300 ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+  </button>
+);
+
 const PatientSettings: React.FC = () => {
   const navigate = useNavigate();
   const [settings, setSettings] = useState<Settings>({
@@ -33,25 +46,18 @@ const PatientSettings: React.FC = () => {
     enableRealTimeTracking: true,
     enableFormAnalysis: true
   });
-  const [googleFitStatus, setGoogleFitStatus] = useState<GoogleFitStatus>({
-    connected: false,
-    tokenValid: false
-  });
+  const [googleFitStatus, setGoogleFitStatus] = useState<GoogleFitStatus>({ connected: false, tokenValid: false });
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [errorModal, setErrorModal] = useState<ErrorModal>({
-    show: false,
-    type: null,
-    message: ''
-  });
+  const [errorModal, setErrorModal] = useState<ErrorModal>({ show: false, type: null, message: '' });
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
+
   const handleToggleTheme = () => {
     const next = !isDark;
     setIsDark(next);
-    if(next) {
+    if (next) {
       document.documentElement.classList.add('dark');
       localStorage.setItem('theme', 'dark');
     } else {
@@ -60,24 +66,18 @@ const PatientSettings: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    fetchSettings();
-  }, []);
+  useEffect(() => { fetchSettings(); }, []);
 
   const fetchSettings = async () => {
     setRefreshing(true);
     try {
       const response = await fetch('http://localhost:5000/settings', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
-
       if (response.ok) {
         const data: SettingsResponse = await response.json();
         setSettings(data.settings);
         setGoogleFitStatus(data.googleFit);
-        console.log('Settings refreshed:', data);
       }
     } catch (error) {
       console.error('Error fetching settings:', error);
@@ -90,51 +90,25 @@ const PatientSettings: React.FC = () => {
   const handleToggleSmartwatch = async () => {
     setToggling(true);
     setSuccessMessage(null);
-
     try {
       const response = await fetch('http://localhost:5000/settings/smartwatch/toggle', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          enabled: !settings.smartwatchEnabled
-        })
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: !settings.smartwatchEnabled })
       });
-
       const data = await response.json();
-      console.log('Toggle response:', data);
-
       if (response.ok) {
         setSettings(data.settings);
-        setSuccessMessage(
-          data.settings.smartwatchEnabled 
-            ? 'Smartwatch tracking enabled!' 
-            : 'Smartwatch tracking disabled'
-        );
+        setSuccessMessage(data.settings.smartwatchEnabled ? 'Smartwatch tracking enabled!' : 'Smartwatch tracking disabled');
         setTimeout(() => setSuccessMessage(null), 3000);
       } else {
-        // Handle error cases
         if (data.error === 'GOOGLE_FIT_NOT_CONNECTED') {
-          setErrorModal({
-            show: true,
-            type: 'GOOGLE_FIT_NOT_CONNECTED',
-            message: data.message
-          });
+          setErrorModal({ show: true, type: 'GOOGLE_FIT_NOT_CONNECTED', message: data.message });
         } else if (data.error === 'TOKEN_EXPIRED') {
-          setErrorModal({
-            show: true,
-            type: 'TOKEN_EXPIRED',
-            message: data.message
-          });
-        } else {
-          console.error('Toggle error:', data);
-          alert(data.message || 'Failed to update smartwatch setting');
+          setErrorModal({ show: true, type: 'TOKEN_EXPIRED', message: data.message });
         }
       }
     } catch (error) {
-      console.error('Error toggling smartwatch:', error);
       alert('Failed to update setting. Please try again.');
     } finally {
       setToggling(false);
@@ -142,21 +116,14 @@ const PatientSettings: React.FC = () => {
   };
 
   const handleConnectGoogleFit = () => {
-    // Open Google Fit auth popup
     fetch('http://localhost:5000/google-fit/auth-url', {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     })
       .then(res => res.json())
       .then(data => {
         const popup = window.open(data.authUrl, 'Google Fit Auth', 'width=600,height=700');
-        
-        // Listen for message from popup
         const handleMessage = (event: MessageEvent) => {
           if (event.data?.type === 'GOOGLE_FIT_CONNECTED') {
-            console.log('Google Fit connected message received');
-            // Refresh settings immediately
             setTimeout(() => {
               fetchSettings();
               setErrorModal({ show: false, type: null, message: '' });
@@ -167,35 +134,16 @@ const PatientSettings: React.FC = () => {
           }
         };
         window.addEventListener('message', handleMessage);
-        
-        // Fallback: Check if popup closed
         const checkPopup = setInterval(() => {
           if (popup?.closed) {
             clearInterval(checkPopup);
-            // Wait a bit for backend to process, then refresh
-            setTimeout(() => {
-              fetchSettings();
-              setErrorModal({ show: false, type: null, message: '' });
-            }, 500);
+            setTimeout(() => { fetchSettings(); setErrorModal({ show: false, type: null, message: '' }); }, 500);
             window.removeEventListener('message', handleMessage);
           }
         }, 500);
-        
-        // Cleanup after 60 seconds
-        setTimeout(() => {
-          clearInterval(checkPopup);
-          window.removeEventListener('message', handleMessage);
-        }, 60000);
+        setTimeout(() => { clearInterval(checkPopup); window.removeEventListener('message', handleMessage); }, 60000);
       })
-      .catch(error => {
-        console.error('Error getting auth URL:', error);
-        alert('Failed to initiate Google Fit connection');
-      });
-  };
-
-  const handleRefreshToken = () => {
-    // Reconnect Google Fit
-    handleConnectGoogleFit();
+      .catch(() => alert('Failed to initiate Google Fit connection'));
   };
 
   const handleDisconnectGoogleFit = async () => {
@@ -203,21 +151,13 @@ const PatientSettings: React.FC = () => {
       setRefreshing(true);
       const response = await fetch('http://localhost:5000/google-fit/disconnect', {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
-
       if (response.ok) {
         setSuccessMessage('Google Fit disconnected');
         setTimeout(() => setSuccessMessage(null), 3000);
-      } else {
-        const data = await response.json();
-        console.error('Disconnect failed:', data);
-        alert(data.message || 'Failed to disconnect Google Fit');
       }
     } catch (err) {
-      console.error('Error disconnecting Google Fit:', err);
       alert('Failed to disconnect Google Fit');
     } finally {
       setRefreshing(false);
@@ -225,272 +165,207 @@ const PatientSettings: React.FC = () => {
     }
   };
 
-  const closeModal = () => {
-    setErrorModal({ show: false, type: null, message: '' });
-  };
+  const closeModal = () => setErrorModal({ show: false, type: null, message: '' });
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2" style={{ borderBottomColor: 'var(--p-blue)' }} />
+      <div className="min-h-screen bg-[#F1FAEE] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-[#A8DADC] border-t-[#1D3557] rounded-full animate-spin" />
+          <p className="text-[#457B9D] font-bold text-sm uppercase tracking-widest">Loading settings...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="page-content">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="p-card flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-semibold" style={{ color: 'var(--p-text-primary)' }}>Settings</h1>
-            <p className="mt-1 text-sm" style={{ color: 'var(--p-text-secondary)' }}>
-              Manage your exercise tracking preferences
-            </p>
-          </div>
-          <button
-            onClick={() => navigate('/patient')}
-            className="px-4 py-2 rounded-lg transition"
-            style={{ background: 'var(--p-bg-surface)', border: '1px solid var(--p-border)', color: 'var(--p-text-secondary)' }}
-          >
-            Back to Dashboard
+    <div className="min-h-screen font-sans bg-[#F1FAEE] pb-20">
+
+      {/* ── DEEP OCEAN HEADER ── */}
+      <section className="relative w-full bg-gradient-to-br from-[#1D3557] via-[#1D3557] to-[#457B9D] px-6 py-12 md:px-12 md:py-16 overflow-hidden rounded-b-[3rem] shadow-2xl shadow-[#1D3557]/20 mb-10">
+        <div className="absolute top-[-20%] left-[-10%] w-[120%] h-[120%] bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-[#A8DADC]/10 via-transparent to-transparent z-0 opacity-80" />
+        <div className="absolute inset-0 z-0 opacity-[0.04]" style={{ backgroundImage: "linear-gradient(rgba(168,218,220,1) 1px, transparent 1px), linear-gradient(90deg, rgba(168,218,220,1) 1px, transparent 1px)", backgroundSize: "40px 40px" }} />
+
+        <div className="max-w-3xl mx-auto relative z-10">
+          <button onClick={() => navigate('/patient')} className="flex items-center text-[#A8DADC] font-bold text-sm mb-6 hover:text-white transition-colors group">
+            <ChevronLeft size={16} className="group-hover:-translate-x-1 transition-transform" /> Back to Dashboard
           </button>
-        </div>
-        
-        {/* Google Fit Status Card */}
-        <div className="p-card rounded-lg shadow p-6" style={{ background: 'var(--p-bg-surface)', border: '1px solid var(--p-border)' }}>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center">
+              <Settings size={28} className="text-[#F1FAEE]" />
+            </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-2">
-                Google Fit Connection
-              </h2>
-              <p className="text-sm text-gray-600">
-                Connect your smartwatch to track real-time exercise data
-              </p>
+              <h1 className="text-4xl md:text-5xl font-black text-[#F1FAEE] tracking-tight">Settings</h1>
+              <p className="text-[#A8DADC] text-lg mt-1">Manage your exercise tracking preferences.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="max-w-3xl mx-auto px-6 md:px-12 space-y-5">
+
+        {/* Success toast */}
+        {successMessage && (
+          <div className="flex items-center gap-3 bg-[#A8DADC]/20 border border-[#A8DADC]/40 text-[#1D3557] px-5 py-4 rounded-2xl font-bold shadow-md animate-fadeIn">
+            <CheckCircle size={20} className="text-[#457B9D] shrink-0" />
+            {successMessage}
+          </div>
+        )}
+
+        {/* ── Google Fit Card ── */}
+        <div className="bg-white rounded-3xl p-6 shadow-xl shadow-[#1D3557]/[0.04] border border-[#1D3557]/5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-[#457B9D]/10 border border-[#457B9D]/20 flex items-center justify-center text-[#457B9D]">
+                {googleFitStatus.connected && googleFitStatus.tokenValid ? <Wifi size={20} /> : <WifiOff size={20} />}
+              </div>
+              <div>
+                <h2 className="font-black text-[#1D3557] text-[16px]">Google Fit Connection</h2>
+                <p className="text-[#457B9D]/70 text-[12px] font-semibold">Connect your smartwatch for real-time exercise data</p>
+              </div>
             </div>
             <div className="flex items-center gap-3">
-              {googleFitStatus.connected && googleFitStatus.tokenValid ? (
-                <div className="flex items-center text-green-600">
-                  <CheckCircle className="mr-2" size={24} />
-                  <span className="font-medium">Connected</span>
-                </div>
-              ) : (
-                <div className="flex items-center text-red-600">
-                  <XCircle className="mr-2" size={24} />
-                  <span className="font-medium">Not Connected</span>
-                </div>
-              )}
-              
-              {/* Manual Refresh Button */}
-              <button
-                onClick={fetchSettings}
-                disabled={refreshing}
-                className={`p-2 rounded-lg transition ${
-                  refreshing 
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                    : 'hover:bg-gray-100 text-gray-600 hover:text-blue-600'
-                }`}
-                title="Refresh status"
-              >
-                <RefreshCw className={refreshing ? 'animate-spin' : ''} size={20} />
+              <span className={`flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full border ${googleFitStatus.connected && googleFitStatus.tokenValid ? 'bg-[#A8DADC]/20 text-[#1D3557] border-[#A8DADC]/40' : 'bg-[#E63946]/10 text-[#E63946] border-[#E63946]/20'}`}>
+                {googleFitStatus.connected && googleFitStatus.tokenValid
+                  ? <><CheckCircle size={12} /> Connected</>
+                  : <><XCircle size={12} /> Not Connected</>}
+              </span>
+              <button onClick={fetchSettings} disabled={refreshing} className="w-9 h-9 rounded-xl bg-[#F1FAEE] border border-[#A8DADC]/30 flex items-center justify-center text-[#457B9D] hover:bg-[#457B9D] hover:text-[#F1FAEE] transition-all" title="Refresh status">
+                <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
               </button>
             </div>
           </div>
-          
-          {!googleFitStatus.connected && (
-            <button
-              onClick={handleConnectGoogleFit}
-              className="mt-4 w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              Connect Google Fit
-            </button>
-          )}
 
-          {googleFitStatus.connected && !googleFitStatus.tokenValid && (
-            <button
-              onClick={handleRefreshToken}
-              className="mt-4 w-full px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 flex items-center justify-center"
-            >
-              <RefreshCw className="mr-2" />
-              Refresh Connection
-            </button>
-          )}
-          {googleFitStatus.connected && (
-            <button
-              onClick={handleDisconnectGoogleFit}
-              disabled={refreshing}
-              className="mt-3 w-full px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-            >
-              Disconnect Google Fit
-            </button>
-          )}
-        </div>
-
-        {/* Smartwatch Tracking Toggle */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <Watch className="text-blue-600" size={24} />
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Smartwatch Tracking
-                </h3>
-                <p className="text-sm text-gray-600">
-                  Enable real-time sensor data collection during exercises
-                </p>
-              </div>
-            </div>
-            
-            {/* Toggle Switch */}
-            <button
-              onClick={handleToggleSmartwatch}
-              disabled={toggling}
-              className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                settings.smartwatchEnabled ? 'bg-blue-600' : 'bg-gray-300'
-              } ${toggling ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <span
-                className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
-                  settings.smartwatchEnabled ? 'translate-x-7' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Status Message */}
-          <div className="mt-4">
-            {settings.smartwatchEnabled ? (
-              googleFitStatus.connected && googleFitStatus.tokenValid ? (
-                <div className="flex items-start bg-green-50 border border-green-200 rounded-lg p-3">
-                  <CheckCircle className="text-green-600 mt-0.5 mr-2 flex-shrink-0" size={18} />
-                  <div className="text-sm text-green-800">
-                    <strong>Active:</strong> Your sessions will include real-time heart rate, movement, and form analysis.
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-start bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                  <AlertCircle className="text-yellow-600 mt-0.5 mr-2 flex-shrink-0" size={18} />
-                  <div className="text-sm text-yellow-800">
-                    <strong>Warning:</strong> Smartwatch tracking is enabled but Google Fit is not properly connected. Sessions will run in manual mode.
-                  </div>
-                </div>
-              )
-            ) : (
-              <div className="flex items-start bg-gray-50 border border-gray-200 rounded-lg p-3">
-                <div className="text-sm text-gray-700">
-                  <strong>Manual Mode:</strong> Sessions will not collect sensor data. You can manually record your exercise completion.
-                </div>
-              </div>
+          <div className="flex flex-col gap-2 mt-3">
+            {!googleFitStatus.connected && (
+              <button onClick={handleConnectGoogleFit} className="w-full py-3.5 bg-[#457B9D] hover:bg-[#A8DADC] hover:text-[#1D3557] text-[#F1FAEE] rounded-2xl font-black text-[14px] uppercase tracking-widest shadow-lg shadow-[#457B9D]/20 transition-all hover:-translate-y-0.5">
+                Connect Google Fit
+              </button>
+            )}
+            {googleFitStatus.connected && !googleFitStatus.tokenValid && (
+              <button onClick={handleConnectGoogleFit} className="w-full py-3.5 bg-[#1D3557] hover:bg-[#457B9D] text-[#F1FAEE] rounded-2xl font-black text-[14px] uppercase tracking-widest shadow-lg shadow-[#1D3557]/20 transition-all flex items-center justify-center gap-2 hover:-translate-y-0.5">
+                <RefreshCw size={16} /> Refresh Connection
+              </button>
+            )}
+            {googleFitStatus.connected && (
+              <button onClick={handleDisconnectGoogleFit} disabled={refreshing} className="w-full py-3 border-2 border-[#E63946]/20 text-[#E63946] rounded-2xl font-black text-[13px] uppercase tracking-widest hover:bg-[#E63946]/10 transition-all disabled:opacity-50">
+                Disconnect Google Fit
+              </button>
             )}
           </div>
         </div>
 
-        {/* Global UI Preferences */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <Moon className="text-indigo-600" size={24} />
+        {/* ── Smartwatch Tracking Card ── */}
+        <div className="bg-white rounded-3xl p-6 shadow-xl shadow-[#1D3557]/[0.04] border border-[#1D3557]/5">
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-[#457B9D]/10 border border-[#457B9D]/20 flex items-center justify-center text-[#457B9D]">
+                <Watch size={20} />
+              </div>
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Dark Mode
-                </h3>
-                <p className="text-sm text-gray-600">
-                  Switch the entire interface to Navy/Teal dark theme
-                </p>
+                <h3 className="font-black text-[#1D3557] text-[16px]">Smartwatch Tracking</h3>
+                <p className="text-[#457B9D]/70 text-[12px] font-semibold">Enable real-time sensor data during exercises</p>
               </div>
             </div>
-            
-            <button
-              onClick={handleToggleTheme}
-              className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
-                isDark ? 'bg-indigo-600' : 'bg-gray-300'
-              }`}
-            >
-              <span
-                className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
-                  isDark ? 'translate-x-7' : 'translate-x-1'
-                }`}
-              />
-            </button>
+            <Toggle enabled={settings.smartwatchEnabled} onToggle={handleToggleSmartwatch} disabled={toggling} />
+          </div>
+
+          {settings.smartwatchEnabled ? (
+            googleFitStatus.connected && googleFitStatus.tokenValid ? (
+              <div className="flex items-start gap-3 bg-[#A8DADC]/15 border border-[#A8DADC]/30 rounded-2xl p-4">
+                <CheckCircle size={18} className="text-[#457B9D] shrink-0 mt-0.5" />
+                <p className="text-sm font-semibold text-[#1D3557]">
+                  <span className="font-black">Active:</span> Your sessions will include real-time heart rate, movement, and form analysis.
+                </p>
+              </div>
+            ) : (
+              <div className="flex items-start gap-3 bg-[#E63946]/5 border border-[#E63946]/20 rounded-2xl p-4">
+                <AlertCircle size={18} className="text-[#E63946] shrink-0 mt-0.5" />
+                <p className="text-sm font-semibold text-[#1D3557]">
+                  <span className="font-black">Warning:</span> Smartwatch enabled but Google Fit is not connected. Sessions will run in manual mode.
+                </p>
+              </div>
+            )
+          ) : (
+            <div className="flex items-start gap-3 bg-[#F1FAEE] border border-[#A8DADC]/30 rounded-2xl p-4">
+              <AlertCircle size={18} className="text-[#457B9D]/50 shrink-0 mt-0.5" />
+              <p className="text-sm font-semibold text-[#457B9D]/60">
+                <span className="font-black text-[#1D3557]">Manual Mode:</span> Sessions will not collect sensor data. You can manually record exercise completion.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* ── Appearance Card ── */}
+        <div className="bg-white rounded-3xl p-6 shadow-xl shadow-[#1D3557]/[0.04] border border-[#1D3557]/5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-[#457B9D]/10 border border-[#457B9D]/20 flex items-center justify-center text-[#457B9D]">
+                <Moon size={20} />
+              </div>
+              <div>
+                <h3 className="font-black text-[#1D3557] text-[16px]">Dark Mode</h3>
+                <p className="text-[#457B9D]/70 text-[12px] font-semibold">Switch interface to Navy/Teal dark theme</p>
+              </div>
+            </div>
+            <Toggle enabled={isDark} onToggle={handleToggleTheme} />
           </div>
         </div>
 
-        {/* Advanced Settings */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Advanced Options
-          </h3>
-          
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-900">Real-time Tracking</p>
-                <p className="text-xs text-gray-500">Stream sensor data continuously</p>
-              </div>
-              <div className={`px-3 py-1 rounded-full text-xs ${
-                settings.enableRealTimeTracking ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-              }`}>
-                {settings.enableRealTimeTracking ? 'Enabled' : 'Disabled'}
-              </div>
+        {/* ── Advanced Options Card ── */}
+        <div className="bg-white rounded-3xl p-6 shadow-xl shadow-[#1D3557]/[0.04] border border-[#1D3557]/5">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-11 h-11 rounded-2xl bg-[#457B9D]/10 border border-[#457B9D]/20 flex items-center justify-center text-[#457B9D]">
+              <Shield size={20} />
             </div>
+            <div>
+              <h3 className="font-black text-[#1D3557] text-[16px]">Advanced Options</h3>
+              <p className="text-[#457B9D]/70 text-[12px] font-semibold">System-level tracking configuration</p>
+            </div>
+          </div>
 
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-900">Form Analysis</p>
-                <p className="text-xs text-gray-500">Analyze exercise form and posture</p>
+          <div className="flex flex-col gap-4">
+            {[
+              { label: 'Real-time Tracking', desc: 'Stream sensor data continuously', enabled: settings.enableRealTimeTracking },
+              { label: 'Form Analysis', desc: 'Analyze exercise form and posture', enabled: settings.enableFormAnalysis },
+            ].map((item) => (
+              <div key={item.label} className="flex items-center justify-between px-4 py-3.5 bg-[#F1FAEE] rounded-2xl border border-[#A8DADC]/20">
+                <div>
+                  <p className="text-[14px] font-black text-[#1D3557]">{item.label}</p>
+                  <p className="text-[11px] text-[#457B9D]/60 font-semibold">{item.desc}</p>
+                </div>
+                <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border ${item.enabled ? 'bg-[#A8DADC]/20 text-[#1D3557] border-[#A8DADC]/40' : 'bg-[#F1FAEE] text-[#457B9D]/50 border-[#1D3557]/10'}`}>
+                  {item.enabled ? 'Enabled' : 'Disabled'}
+                </span>
               </div>
-              <div className={`px-3 py-1 rounded-full text-xs ${
-                settings.enableFormAnalysis ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-              }`}>
-                {settings.enableFormAnalysis ? 'Enabled' : 'Disabled'}
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Error Modal */}
+      {/* ── Error Modal ── */}
       {errorModal.show && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-            <div className="flex items-start">
-              <AlertCircle className="text-red-600 mr-3 mt-1 flex-shrink-0" size={24} />
+        <div className="fixed inset-0 bg-[#1D3557]/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl shadow-[#1D3557]/20 max-w-md w-full p-8">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-[#E63946]/10 border border-[#E63946]/20 flex items-center justify-center shrink-0">
+                <AlertCircle size={24} className="text-[#E63946]" />
+              </div>
               <div className="flex-1">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  Cannot Enable Smartwatch Tracking
-                </h3>
-                <p className="text-sm text-gray-700 mb-4">
-                  {errorModal.message}
-                </p>
-
-                <div className="flex space-x-3">
+                <h3 className="font-black text-[#1D3557] text-lg mb-2">Cannot Enable Smartwatch</h3>
+                <p className="text-[#457B9D] font-medium text-sm mb-6">{errorModal.message}</p>
+                <div className="flex gap-3">
                   {errorModal.type === 'GOOGLE_FIT_NOT_CONNECTED' && (
-                    <button
-                      onClick={() => {
-                        handleConnectGoogleFit();
-                        closeModal();
-                      }}
-                      className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                    >
+                    <button onClick={() => { handleConnectGoogleFit(); closeModal(); }} className="flex-1 py-3 bg-[#457B9D] hover:bg-[#A8DADC] hover:text-[#1D3557] text-[#F1FAEE] rounded-2xl font-black text-[13px] uppercase tracking-widest transition-all">
                       Connect Google Fit
                     </button>
                   )}
-                  
                   {errorModal.type === 'TOKEN_EXPIRED' && (
-                    <button
-                      onClick={() => {
-                        handleRefreshToken();
-                        closeModal();
-                      }}
-                      className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                    >
+                    <button onClick={() => { handleConnectGoogleFit(); closeModal(); }} className="flex-1 py-3 bg-[#457B9D] hover:bg-[#A8DADC] hover:text-[#1D3557] text-[#F1FAEE] rounded-2xl font-black text-[13px] uppercase tracking-widest transition-all">
                       Reconnect
                     </button>
                   )}
-
-                  <button
-                    onClick={closeModal}
-                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-                  >
+                  <button onClick={closeModal} className="flex-1 py-3 bg-[#F1FAEE] border border-[#1D3557]/10 text-[#1D3557] rounded-2xl font-black text-[13px] uppercase tracking-widest hover:bg-[#A8DADC]/20 transition-all">
                     Cancel
                   </button>
                 </div>
