@@ -39,12 +39,14 @@ const DoctorPatientMonitoring = () => {
       const p = patientsData.patients?.find((x: any) => x.id === patientId);
       if (p) setPatient(p);
 
+// http://localhost:5000/session/history      
+
       // Fetch History
-      const histRes = await fetch(`http://localhost:5000/doctor/patient/${patientId}/history`, {
+      const histRes = await fetch(`http://localhost:5000/session/doctor/patient/${patientId}/history`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const histData = await histRes.json();
-      if (histData.history) setHistory(histData.history);
+      if (histData.sessions) setHistory(histData.sessions);
 
     } catch (err) {
       console.error(err);

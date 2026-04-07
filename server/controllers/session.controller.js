@@ -250,6 +250,23 @@ export const getSessionHistory = async (req, res) => {
   }
 };
 
+export const getPatientHistoryForDoctor = async (req, res) => {
+  const { patientId } = req.params;
+
+  try {
+    const sessions = await getSessionsByPatient(patientId);
+
+    return res.json({
+      sessions,
+      count: sessions.length
+    });
+
+  } catch (error) {
+    console.error('Error fetching patient history (doctor):', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
 /** Get detailed session analytics — unchanged */
 export const getSessionAnalytics = async (req, res) => {
   const patientId = req.user.id;
