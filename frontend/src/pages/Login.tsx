@@ -191,7 +191,7 @@ export default function Login() {
                   onClick={() => setRole("doctor")}
                   className={`relative z-10 flex-1 py-3 rounded-full text-[13px] uppercase tracking-widest font-black transition-colors flex items-center justify-center gap-2 ${role === "doctor" ? "text-[#F1FAEE]" : "text-[#457B9D] hover:text-[#1D3557]"}`}
                 >
-                  <UserCircle size={16} strokeWidth={3} /> Therapist
+                  <UserCircle size={16} strokeWidth={3} /> Physio
                 </button>
               </div>
 

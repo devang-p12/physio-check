@@ -12,6 +12,7 @@ import * as faceapi from "face-api.js";
 
 import { usePose } from "../hooks/usePose";
 import { useHands } from "../hooks/useHands";
+import { tts } from "../utils/tts";
 import wsService from "../services/websocket.service";
 import { useGoogleFit } from "../hooks/useGoogleFit";
 import ReactionExercise from "../components/ReactionExercise";
@@ -121,13 +122,7 @@ const ExerciseSession = () => {
     const now = Date.now();
     if (now - lastAudioTimeRef.current < 8000) return; // 8 s cooldown
     lastAudioTimeRef.current = now;
-    const msg = new SpeechSynthesisUtterance(
-      "Please do not pressure yourself. Take it slow."
-    );
-    msg.rate = 0.9;
-    msg.pitch = 1;
-    msg.volume = 1;
-    window.speechSynthesis.speak(msg);
+    tts.speak("Please do not pressure yourself. Take it slow.");
   }, []);
 
   /* ---------------- EMOTION DETECTION LOOP ---------------- */
@@ -181,7 +176,7 @@ const ExerciseSession = () => {
         emotionLoopRef.current = null;
       }
       setDetectedEmotion(null);
-      window.speechSynthesis.cancel();
+      tts.cancel();
     }
 
     return () => {

@@ -14,18 +14,7 @@ interface Props {
   onCueUpdate?: (cue: string | null) => void
 }
 
-/* ── TTS helper ───────────────────────────────────────────────────────── */
-function speak(text: string) {
-  if (!("speechSynthesis" in window)) return
-  // cancel any current utterance so the new one plays immediately
-  window.speechSynthesis.cancel()
-  const utt = new SpeechSynthesisUtterance(text)
-  utt.rate = 0.95
-  utt.pitch = 1.0
-  utt.volume = 1.0
-  window.speechSynthesis.speak(utt)
-}
-
+import { tts } from "../utils/tts"
 export function useHands({
   videoRef,
   canvasRef,
@@ -90,7 +79,7 @@ export function useHands({
         (cue !== lastCueRef.current || now - lastSpokenRef.current > 8000) &&
         now - lastSpokenRef.current > 4000
       ) {
-        speak(cue)
+        tts.speak(cue)
         lastCueRef.current = cue
         lastSpokenRef.current = now
       } else if (cue === null) {
@@ -112,7 +101,7 @@ export function useHands({
 
     return () => {
       camera.stop()
-      window.speechSynthesis?.cancel()
+      tts.cancel()
       ctx.clearRect(0, 0, canvas.width, canvas.height)
     }
   }, [isActive])

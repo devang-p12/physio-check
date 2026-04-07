@@ -1,7 +1,7 @@
-import { useEffect, useRef, RefObject } from "react"
-import { Pose, Results } from "@mediapipe/pose"
+import { useEffect, useRef, type RefObject } from "react"
+import { Pose, type Results } from "@mediapipe/pose"
 import { Camera } from "@mediapipe/camera_utils"
-import { processPose, resetPoseState } from "@/utils/poseLogic"
+import { processPose, resetPoseState } from "../utils/poseLogic"
 
 interface Props {
   videoRef: RefObject<HTMLVideoElement>
@@ -14,18 +14,7 @@ interface Props {
   onCueUpdate?: (cue: string | null) => void
 }
 
-/* ── TTS helper ───────────────────────────────────────────────────────── */
-function speak(text: string) {
-  if (!("speechSynthesis" in window)) return
-  // cancel any current utterance so the new one plays immediately
-  window.speechSynthesis.cancel()
-  const utt = new SpeechSynthesisUtterance(text)
-  utt.rate = 0.95
-  utt.pitch = 1.0
-  utt.volume = 1.0
-  window.speechSynthesis.speak(utt)
-}
-
+import { tts } from "../utils/tts"
 export function usePose({
   videoRef,
   canvasRef,
@@ -85,7 +74,7 @@ export function usePose({
         (cue !== lastCueRef.current || now - lastSpokenRef.current > 8000) &&
         now - lastSpokenRef.current > 4000
       ) {
-        speak(cue)
+        tts.speak(cue)
         lastCueRef.current = cue
         lastSpokenRef.current = now
       } else if (cue === null) {
@@ -107,7 +96,7 @@ export function usePose({
 
     return () => {
       camera.stop()
-      window.speechSynthesis?.cancel()
+      tts.cancel()
       ctx.clearRect(0, 0, canvas.width, canvas.height)
     }
   }, [isActive])
