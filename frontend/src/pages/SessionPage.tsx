@@ -88,6 +88,8 @@ const SessionPage = () => {
   const [remoteEmailId, setRemoteEmailId] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const connectStartRef = useRef<number>(0);
+  const lastConnectErrorRef = useRef<string>("");
   
   // MediaPipe State
   const [showSkeleton, setShowSkeleton] = useState(false);
@@ -463,7 +465,10 @@ const SessionPage = () => {
 
   // Check socket connection and join room
   useEffect(() => {
-    if (!socket || !currentUser) return;
+    if (!socket || !currentUser || !id) return;
+
+    connectStartRef.current = Date.now();
+    lastConnectErrorRef.current = "";
 
     const onConnect = () => {
       console.log("Socket connected");
@@ -485,7 +490,13 @@ const SessionPage = () => {
 
     const onConnectError = (error: Error) => {
       console.error("Socket connection error:", error);
-      setConnectionError("Failed to connect to signaling server");
+      lastConnectErrorRef.current = error?.message ?? "Unknown socket error";
+
+      // Avoid failing too early: transient transport retries are common on first connect.
+      const elapsed = Date.now() - connectStartRef.current;
+      if (elapsed >= 9000) {
+        setConnectionError("Failed to connect to signaling server");
+      }
     };
 
     const onJoinedRoom = ({ roomId }: { roomId: string }) => {
@@ -503,9 +514,26 @@ const SessionPage = () => {
         emailId: currentUser, 
         roomId: id 
       });
+    } else {
+      // Ensure connection attempt starts when session page mounts.
+      socket.connect();
+      setConnectionError(null);
     }
 
+    // Grace timeout: only show hard failure if still disconnected after connect window.
+    const failureTimer = window.setTimeout(() => {
+      if (!socket.connected) {
+        setConnectionError("Failed to connect to signaling server");
+        console.error("Socket did not connect within grace window", {
+          roomId: id,
+          user: currentUser,
+          lastError: lastConnectErrorRef.current,
+        });
+      }
+    }, 10000);
+
     return () => {
+      window.clearTimeout(failureTimer);
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
       socket.off("connect_error", onConnectError);
@@ -619,31 +647,36 @@ const SessionPage = () => {
   // Get media stream
   const getUserMediaStream = useCallback(async () => {
     try {
-      console.log("Getting user media stream");
-      
-      if (peer.connectionState === 'closed' || peer.connectionState === 'failed') {
-        console.error("Peer connection is not available");
-        setConnectionError("Peer connection failed");
-        return;
-      }
-
+      // Try to get both first
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true
+      }).catch(async () => {
+        // Try video only
+        return navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+          .catch(async () => {
+            // Try audio only
+            return navigator.mediaDevices.getUserMedia({ video: false, audio: true })
+              .catch(() => null); // Nothing granted — that's fine
+          });
       });
 
-      console.log("Got local stream:", stream);
-      setMyStream(stream);
-
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-        await localVideoRef.current.play();
+      if (stream) {
+        setMyStream(stream);
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+          await localVideoRef.current.play().catch(() => {});
+        }
+      } else {
+        console.warn("No camera/mic access granted — continuing without media");
+        // Don't set connectionError here — let them use chat only
       }
     } catch (error) {
-      console.error("Error accessing media devices:", error);
-      setConnectionError("Failed to access camera/microphone");
+      console.warn("Media access skipped:", error);
+      // Still don't block the session
     }
   }, [peer]);
+
 
   // Send stream when remoteEmailId is set
   useEffect(() => {
@@ -761,23 +794,58 @@ const SessionPage = () => {
     navigate(-1);
   };
 
-  const toggleMute = () => {
-    if (!myStream) return;
+  const toggleMute = async () => {
+    if (!myStream) {
+      // No stream yet — ask for mic permission now
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        // Merge with existing video stream if any
+        const newStream = new MediaStream([
+          ...(myStream ? (myStream as MediaStream).getVideoTracks() : []),
+          ...stream.getAudioTracks()
+        ]);
+        setMyStream(newStream);
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = newStream;
+          localVideoRef.current.play().catch(() => {});
+        }
+        setIsMuted(false);
+      } catch (e) {
+        console.warn("Mic permission denied");
+      }
+      return;
+    }
 
     myStream.getAudioTracks().forEach(track => {
       track.enabled = !track.enabled;
     });
-
     setIsMuted(!isMuted);
   };
 
-  const toggleVideo = () => {
-    if (!myStream) return;
+  const toggleVideo = async () => {
+    if (!myStream || myStream.getVideoTracks().length === 0) {
+      // No video track yet — ask for camera permission now
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        const newStream = new MediaStream([
+          ...(myStream ? myStream.getAudioTracks() : []),
+          ...stream.getVideoTracks()
+        ]);
+        setMyStream(newStream);
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = newStream;
+          localVideoRef.current.play().catch(() => {});
+        }
+        setIsVideoOff(false);
+      } catch (e) {
+        console.warn("Camera permission denied");
+      }
+      return;
+    }
 
     myStream.getVideoTracks().forEach(track => {
       track.enabled = !track.enabled;
     });
-
     setIsVideoOff(!isVideoOff);
   };
 
