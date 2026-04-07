@@ -11,6 +11,7 @@ import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
 import { Hands, HAND_CONNECTIONS } from "@mediapipe/hands";
 import type { Results as HandResults } from "@mediapipe/hands";
 import * as faceapi from "face-api.js";
+import { tts } from "../utils/tts";
 import { CustomExerciseCounter } from "../exercise-engine/repCounter/customExerciseCounter";
 import type { RawLandmark } from "../exercise-engine/types";
 
@@ -695,6 +696,8 @@ const PatientCustomExercise: React.FC = () => {
 
   // ── Alignment cue ─────────────────────────────────────────────────────────
   const [alignmentCue, setAlignmentCue] = useState<string | null>(null);
+  const lastSpeachCueRef = useRef<string | null>(null);
+  const lastSpeachTimeRef = useRef<number>(0);
 
   // ── Emotion ───────────────────────────────────────────────────────────────
   const [strainEmotion, setStrainEmotion]   = useState<string | null>(null);
@@ -812,9 +815,7 @@ const PatientCustomExercise: React.FC = () => {
     const now = Date.now();
     if (now - lastAudioTimeRef.current < 8000) return;
     lastAudioTimeRef.current = now;
-    const msg = new SpeechSynthesisUtterance("Please do not pressure yourself. Take it slow.");
-    msg.rate = 0.9; msg.pitch = 1; msg.volume = 1;
-    window.speechSynthesis.speak(msg);
+    tts.speak("Please do not pressure yourself. Take it slow.");
   }, []);
 
   // ── Session timer ─────────────────────────────────────────────────────────
@@ -962,7 +963,21 @@ const PatientCustomExercise: React.FC = () => {
         }
 
         const pa = analysePosture(results.poseLandmarks as any);
-        setAlignmentCue(pa.status === "incorrect" ? (pa.cue ?? "Check your form") : null);
+        const newCue = pa.status === "incorrect" ? (pa.cue ?? "Check your form") : null;
+        setAlignmentCue(newCue);
+
+        const nowPulse = Date.now();
+        if (
+          newCue !== null &&
+          (newCue !== lastSpeachCueRef.current || nowPulse - lastSpeachTimeRef.current > 8000) &&
+          nowPulse - lastSpeachTimeRef.current > 4000
+        ) {
+          tts.speak(newCue);
+          lastSpeachCueRef.current = newCue;
+          lastSpeachTimeRef.current = nowPulse;
+        } else if (newCue === null) {
+          lastSpeachCueRef.current = null;
+        }
       }
       processStretch();
     };
@@ -1117,7 +1132,7 @@ const PatientCustomExercise: React.FC = () => {
     streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setIsActive(false); setStrainEmotion(null); setAlignmentCue(null);
-    window.speechSynthesis.cancel(); setStatus("Session stopped");
+    tts.cancel(); setStatus("Session stopped");
 
     const finalCorrect    = correctPostureSecsRef.current;
     const finalTotal      = totalSessionSecsRef.current;
