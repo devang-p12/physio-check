@@ -33,8 +33,16 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 await connectDB();
 
+// ✅ CREATE SOCKET SERVER
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
 // Initialize WebSocket server
-initializeWebSocket(server);
+// initializeWebSocket(server);
 
 app.get("/health", (req, res) => {
   res.json({ status: "OK", message: "Auth service running" });
@@ -56,13 +64,6 @@ app.use((req, res) => {
   res.status(404).json({ message: "route not found" });
 });
 
-// ✅ CREATE SOCKET SERVER
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
-});
 
 // ✅ SOCKET DATA MAPS
 const emailToSocketMapping = new Map();
@@ -111,6 +112,10 @@ io.on("connection", (socket) => {
     }
     console.log("❌ User disconnected:", socket.id);
   });
+});
+
+app.use((req, res) => {
+  res.status(404).json({ message: "route not found" });
 });
 
 // ✅ START SERVER
