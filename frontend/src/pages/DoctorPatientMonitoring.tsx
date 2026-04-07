@@ -54,6 +54,30 @@ const DoctorPatientMonitoring = () => {
     setLoading(false);
   };
 
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  };
+
+  const formatTime = (dateString: string) => {
+    return new Date(dateString).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const formatDuration = (seconds?: number) => {
+    if (!seconds) return "0:00";
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+
   // Process History Rows
   const processedHistory = useMemo(() => {
     let res = [...history];
@@ -282,10 +306,10 @@ const DoctorPatientMonitoring = () => {
                 <table className="w-full text-left">
                   <thead>
                      <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                       <th className="py-3.5 px-6">Date</th>
+                       <th className="py-3.5 px-6">Date & Time</th>
                        <th className="py-3.5 px-6">Exercise</th>
-                       <th className="py-3.5 px-6">Sets/Reps</th>
-                       <th className="py-3.5 px-6">Performance</th>
+                       <th className="py-3.5 px-6">Analytics</th>
+                       <th className="py-3.5 px-6">Status</th>
                        <th className="py-3.5 px-6 text-right">Details</th>
                      </tr>
                   </thead>
@@ -293,30 +317,55 @@ const DoctorPatientMonitoring = () => {
                     {paginatedHistory.map((h, i) => {
                       const sets = h.completionMetrics?.completedSets || h.sets || 0;
                       const reqSets = h.prescription?.sets || 0;
-                      const score = Math.min(100, Math.floor(Math.random() * 20) + 75); // Mock score if missing
+                      const score = h.analytics?.repsCompleted || 0;
                       return (
                         <tr key={i} className="hover:bg-slate-50/50 transition-colors h-[60px] group">
                            <td className="py-3 px-6 text-slate-600 font-medium">
-                             {new Date(h.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                             <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
+                               <Calendar size={14} className="text-teal-500" /> {formatDate(h.startTime)}
+                             </span>
+                             <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                               <Clock size={14} /> {formatTime(h.startTime)}
+                             </span>
                            </td>
                            <td className="py-3 px-6 font-bold text-slate-900">
-                             {h.exerciseId?.name || "Unknown"}
+                             {h.assignmentId?.exerciseId?.name || h.assignmentId?.customTemplateId?.name || "Unknown"}
                            </td>
                            <td className="py-3 px-6 text-slate-600">
-                             {sets} <span className="text-slate-400 text-xs">/ {reqSets}</span> sets
+                           <div className="flex items-center gap-4">
+                              <div className="flex flex-col items-start gap-1">
+                                <span className="text-[10px] uppercase font-bold text-slate-400">Reps</span>
+                                <span className="flex items-center gap-1 text-sm font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
+                                  {h.analytics?.repsCompleted ?? 0}
+                                </span>
+                              </div>
+                              <div className="flex flex-col items-start gap-1">
+                                <span className="text-[10px] uppercase font-bold text-slate-400">Score</span>
+                                <span className="flex items-center gap-1 text-sm font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md">
+                                  {h.analytics?.formQuality?.score ? `${Math.round(h.analytics.formQuality.score)}%` : "N/A"}
+                                </span>
+                              </div>
+                              <div className="flex flex-col items-start gap-1">
+                                <span className="text-[10px] uppercase font-bold text-slate-400">Duration</span>
+                                <span className="flex items-center gap-1 text-sm font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
+                                  <Clock size={12} className="text-blue-500" /> 
+                                  {formatDuration(h.analytics?.totalDuration)}
+                                </span>
+                              </div>
+                           </div>
                            </td>
                            <td className="py-3 px-6">
-                             <div className="flex items-center gap-3">
-                               <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden shrink-0">
-                                 <div className={`h-full rounded-full ${score >= 80 ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${score}%` }} />
-                               </div>
-                               <span className={`text-[11px] font-bold ${score >= 80 ? 'text-emerald-700' : 'text-amber-700'}`}>{score} pt</span>
-                             </div>
+                            <span className={`inline-block px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${
+                              h.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 
+                              h.status === 'in-progress' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
+                            }`}>
+                              {h.status}
+                            </span>
                            </td>
                            <td className="py-3 px-6 text-right">
                              <button
                                onClick={() => navigate(`/doctor/session/${h._id}`)}
-                               className="text-[12px] font-bold tracking-wide uppercase text-teal-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                               className="text-teal-600 bg-teal-50 hover:bg-teal-100 px-4 py-2 rounded-lg text-sm font-bold transition flex items-center justify-end gap-1 ml-auto group-hover:bg-teal-600 group-hover:text-white"
                              >
                                View Log
                              </button>
