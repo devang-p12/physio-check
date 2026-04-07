@@ -6,12 +6,26 @@ let wss = null;
 const clients = new Map(); // Map of userId -> WebSocket connection
 
 export const initializeWebSocket = (server) => {
-  wss = new WebSocketServer({ server, path: '/ws' });
+  // ✅ CRITICAL FIX: Use handleProtocols + server upgrade filtering by path
+  // so this WSS ONLY handles /ws and never touches /socket.io upgrades
+  wss = new WebSocketServer({ noServer: true });
+
+  // Manually handle the HTTP upgrade event — only pass /ws to this WSS
+  server.on('upgrade', (request, socket, head) => {
+    const { pathname } = new URL(request.url, `http://${request.headers.host}`);
+
+    if (pathname === '/ws') {
+      // ✅ This is our sensor data WebSocket — handle it
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request);
+      });
+    }
+    // ✅ All other paths (like /socket.io) are left alone for Socket.IO to handle
+  });
 
   wss.on('connection', async (ws, req) => {
-    console.log('🔌 New WebSocket connection');
+    console.log('🔌 New WebSocket connection on /ws');
 
-    // Extract token from query params
     const url = new URL(req.url, `http://${req.headers.host}`);
     const token = url.searchParams.get('token');
 
@@ -21,22 +35,18 @@ export const initializeWebSocket = (server) => {
     }
 
     try {
-      // Verify JWT token
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
       const userId = decoded.id;
 
-      // Store the connection
       clients.set(userId, ws);
-      console.log(`✅ User ${userId} connected via WebSocket`);
+      console.log(`✅ User ${userId} connected via WebSocket /ws`);
 
-      // Send welcome message
       ws.send(JSON.stringify({
         type: 'connected',
         userId: userId,
         timestamp: new Date().toISOString()
       }));
 
-      // Handle incoming messages
       ws.on('message', async (data) => {
         try {
           const message = JSON.parse(data.toString());
@@ -50,13 +60,11 @@ export const initializeWebSocket = (server) => {
         }
       });
 
-      // Handle disconnection
       ws.on('close', () => {
         clients.delete(userId);
-        console.log(`👋 User ${userId} disconnected`);
+        console.log(`👋 User ${userId} disconnected from /ws`);
       });
 
-      // Handle errors
       ws.on('error', (error) => {
         console.error('❌ WebSocket error:', error);
         clients.delete(userId);
@@ -68,11 +76,10 @@ export const initializeWebSocket = (server) => {
     }
   });
 
-  console.log('✅ WebSocket server initialized');
+  console.log('✅ WebSocket server initialized on path /ws');
   return wss;
 };
 
-// Handle different types of messages
 const handleMessage = async (userId, message, ws) => {
   const { type, data } = message;
 
@@ -80,19 +87,15 @@ const handleMessage = async (userId, message, ws) => {
     case 'sensor_data':
       await handleSensorData(userId, data, ws);
       break;
-
     case 'session_start':
       await handleSessionStart(userId, data, ws);
       break;
-
     case 'session_end':
       await handleSessionEnd(userId, data, ws);
       break;
-
     case 'ping':
       ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }));
       break;
-
     default:
       ws.send(JSON.stringify({
         type: 'error',
@@ -101,10 +104,8 @@ const handleMessage = async (userId, message, ws) => {
   }
 };
 
-// Handle real-time sensor data
 const handleSensorData = async (userId, data, ws) => {
   try {
-    // Get active session for the user
     const activeSession = await getActiveSession(userId);
 
     if (!activeSession) {
@@ -115,7 +116,6 @@ const handleSensorData = async (userId, data, ws) => {
       return;
     }
 
-    // Add sensor data point to the session
     const sensorDataPoint = {
       timestamp: new Date(data.timestamp || Date.now()),
       heartRate: data.heartRate,
@@ -131,14 +131,12 @@ const handleSensorData = async (userId, data, ws) => {
 
     await addSensorDataPoint(activeSession._id, sensorDataPoint);
 
-    // Broadcast to connected clients (e.g., doctor monitoring)
     broadcastToUser(userId, {
       type: 'sensor_data_received',
       sessionId: activeSession._id,
       data: sensorDataPoint
     });
 
-    // Send acknowledgment
     ws.send(JSON.stringify({
       type: 'sensor_data_ack',
       timestamp: sensorDataPoint.timestamp
@@ -153,7 +151,6 @@ const handleSensorData = async (userId, data, ws) => {
   }
 };
 
-// Handle session start
 const handleSessionStart = async (userId, data, ws) => {
   ws.send(JSON.stringify({
     type: 'session_started',
@@ -162,7 +159,6 @@ const handleSessionStart = async (userId, data, ws) => {
   }));
 };
 
-// Handle session end
 const handleSessionEnd = async (userId, data, ws) => {
   ws.send(JSON.stringify({
     type: 'session_ended',
@@ -171,15 +167,13 @@ const handleSessionEnd = async (userId, data, ws) => {
   }));
 };
 
-// Broadcast message to a specific user
 export const broadcastToUser = (userId, message) => {
   const client = clients.get(userId);
-  if (client && client.readyState === 1) { // 1 = OPEN
+  if (client && client.readyState === 1) {
     client.send(JSON.stringify(message));
   }
 };
 
-// Broadcast to all connected clients
 export const broadcastToAll = (message) => {
   clients.forEach((client) => {
     if (client.readyState === 1) {
@@ -188,7 +182,6 @@ export const broadcastToAll = (message) => {
   });
 };
 
-// Get connected clients count
 export const getConnectedClientsCount = () => {
   return clients.size;
 };
