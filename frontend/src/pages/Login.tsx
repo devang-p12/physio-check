@@ -33,9 +33,10 @@ export default function Login() {
       });
 
       localStorage.setItem("token", data.token);
-      localStorage.setItem("name", data.name || "User");
+      localStorage.setItem("name", data.user?.name || data.name || "User");
       localStorage.setItem("role", role);
-      if (data.id) localStorage.setItem("id", data.id);
+      const userId = data.user?.id || data.id;
+      if (userId) localStorage.setItem("id", userId);
 
       navigate(role === "doctor" ? "/doctor" : "/patient");
     } catch (err: any) {
